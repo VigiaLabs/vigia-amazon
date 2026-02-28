@@ -1,22 +1,231 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────
+   VIGIA — CSS Custom Properties
+   All colors reference --c-* vars so theme
+   swapping via JS instantly repaints everything
+   ───────────────────────────────────────────── */
+
 :root {
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #F5F5F5;
-  --bg-hover: #E5E7EB;
-  --border-default: #CBD5E1;
-  --border-active: #000000;
-  --text-primary: #000000;
-  --text-secondary: #6B7280;
-  --text-tertiary: #9CA3AF;
+  /* Dark theme defaults (overridden by SettingsContext) */
+  --c-bg:        #0C1016;
+  --c-sidebar:   #141920;
+  --c-panel:     #181E27;
+  --c-elevated:  #1E2530;
+  --c-deep:      #080B10;
+  --c-border:    rgba(255,255,255,0.07);
+  --c-border-md: rgba(255,255,255,0.11);
+  --c-text:      #DDE3ED;
+  --c-text-2:    #7C8799;
+  --c-text-3:    #3D4655;
+  --c-accent:    #1D4ED8;
+  --c-accent-2:  #3B82F6;
+  --c-green:     #0EA472;
+  --c-red:       #E5484D;
+  --c-yellow:    #E9A23B;
+
+  /* Density defaults */
+  --d-row:       26px;
+  --d-pad:       8px;
+  --d-gap:       6px;
+  --d-font-size: 13px;
 }
 
-body {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  margin: 0;
-  padding: 0;
+/* ─────────────────────────────────────────────
+   Tailwind v4 theme tokens — reference CSS vars
+   ───────────────────────────────────────────── */
+
+@theme {
+  --color-ide-bg:        var(--c-bg);
+  --color-ide-sidebar:   var(--c-sidebar);
+  --color-ide-panel:     var(--c-panel);
+  --color-ide-elevated:  var(--c-elevated);
+  --color-ide-border:    var(--c-border);
+  --color-ide-text:      var(--c-text);
+  --color-ide-text-secondary: var(--c-text-2);
+  --color-ide-text-tertiary:  var(--c-text-3);
+  --color-ide-accent:    var(--c-accent);
+  --color-ide-accent-2:  var(--c-accent-2);
+  --color-ide-green:     var(--c-green);
+  --color-ide-red:       var(--c-red);
+  --color-ide-yellow:    var(--c-yellow);
+
+  --font-ui:   'Inter', system-ui, sans-serif;
+  --font-data: 'JetBrains Mono', monospace;
 }
 
+/* ─────────────────────────────────────────────
+   Base
+   ───────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: var(--d-font-size);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  transition: background 0.2s, color 0.2s;
+}
+
+/* ─────────────────────────────────────────────
+   Scrollbars
+   ───────────────────────────────────────────── */
+
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--c-border-md); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+
+/* ─────────────────────────────────────────────
+   MapLibre dark overrides
+   ───────────────────────────────────────────── */
+
+.maplibregl-canvas-container,
+.maplibregl-canvas { outline: none !important; }
+.maplibregl-ctrl-logo,
+.maplibregl-ctrl-attrib { display: none !important; }
+.maplibregl-ctrl-group {
+  background: var(--c-panel) !important;
+  border: 1px solid var(--c-border) !important;
+  box-shadow: none !important;
+  border-radius: 3px !important;
+}
+.maplibregl-ctrl-group button { background: transparent !important; border: none !important; }
+.maplibregl-ctrl-icon         { filter: invert(0.5) !important; }
+
+/* ─────────────────────────────────────────────
+   Utility class overrides (for teammate's code)
+   ───────────────────────────────────────────── */
+
+.bg-ide-bg           { background: var(--c-bg)      !important; }
+.bg-ide-panel        { background: var(--c-panel)   !important; }
+.bg-ide-sidebar      { background: var(--c-sidebar) !important; }
+.border-ide-border   { border-color: var(--c-border) !important; }
+.text-ide-text             { color: var(--c-text)   !important; }
+.text-ide-text-secondary   { color: var(--c-text-2) !important; }
+.text-ide-text-tertiary    { color: var(--c-text-3) !important; }
+.hover\:bg-ide-hover:hover { background: rgba(255,255,255,0.04) !important; }
+
+/* ─────────────────────────────────────────────
+   Tab underline
+   ───────────────────────────────────────────── */
+
+.tab-line {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1.5px;
+  background: var(--c-accent-2);
+  border-radius: 1px;
+  transition: background 0.2s;
+}
+
+/* ─────────────────────────────────────────────
+   Animations
+   ───────────────────────────────────────────── */
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+.pulse { animation: status-pulse 2.6s ease-in-out infinite; }
+
+@keyframes log-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.log-line { animation: log-in 0.12s ease-out both; }
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.slide-in-right { animation: slide-in-right 0.2s cubic-bezier(0.16,1,0.3,1) both; }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.fade-in { animation: fade-in 0.15s ease-out both; }
+
+/* ─────────────────────────────────────────────
+   Drag handles
+   ───────────────────────────────────────────── */
+
+.drag-handle-x { cursor: col-resize; }
+.drag-handle-x:hover,
+.drag-handle-x.active { background: rgba(59,130,246,0.35) !important; }
+
+.drag-handle-y { cursor: ns-resize; }
+.drag-handle-y:hover .drag-pip,
+.drag-handle-y.active .drag-pip { background: rgba(59,130,246,0.5) !important; }
+
+/* ─────────────────────────────────────────────
+   Settings overlay
+   ───────────────────────────────────────────── */
+
+.settings-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(3px);
+}
+.settings-panel {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 300px;
+  background: var(--c-sidebar);
+  border-left: 1px solid var(--c-border-md);
+  display: flex; flex-direction: column;
+  box-shadow: -16px 0 48px rgba(0,0,0,0.6);
+}
+
+/* ─────────────────────────────────────────────
+   Drop zone
+   ───────────────────────────────────────────── */
+
+.drop-zone {
+  border: 1.5px dashed var(--c-border-md);
+  border-radius: 4px;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+.drop-zone:hover       { border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.02); }
+.drop-zone.drag-over   { border-color: var(--c-accent-2); background: rgba(59,130,246,0.06); }
+
+/* ─────────────────────────────────────────────
+   Toggle switch
+   ───────────────────────────────────────────── */
+
+.vigia-toggle {
+  position: relative; display: inline-flex;
+  width: 28px; height: 16px; border-radius: 8px;
+  cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+}
+.vigia-toggle-thumb {
+  position: absolute; top: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: white;
+  transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+/* ─────────────────────────────────────────────
+   Map grid overlay
+   ───────────────────────────────────────────── */
+
+.map-grid-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.06) 1px, transparent 1px);
+  background-size: 60px 60px;
+  background-position: center center;
+}
