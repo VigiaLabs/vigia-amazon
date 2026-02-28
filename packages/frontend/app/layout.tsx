@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { SettingsProvider } from './components/SettingsContext';
 
 export const metadata: Metadata = {
   title: 'VIGIA — Road Intelligence IDE',
@@ -12,13 +13,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body style={{
         height: '100%',
         overflow: 'hidden',
-        background: '#0E1117',
-        color: '#E2E8F0',
+        background: 'var(--c-bg)',
+        color: 'var(--c-text)',
         fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-        margin: 0,
-        padding: 0,
+        margin: 0, padding: 0,
+        transition: 'background 0.2s, color 0.2s',
       }}>
-        {children}
+        <SettingsProvider>
+          {children}
+        </SettingsProvider>
       </body>
     </html>
   );
