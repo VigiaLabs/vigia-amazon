@@ -95,30 +95,6 @@ export function TopBar({ onSettingsOpen }: TopBarProps) {
 
       {/* ── Right ──────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', height: '100%', borderLeft: `1px solid ${C.border}` }}>
-        {/* Innovation Features button */}
-        <a
-          href="/innovation"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '0 12px', height: '100%', border: 'none',
-            background: 'transparent', color: C.accent, cursor: 'pointer',
-            fontSize: '0.8rem', fontWeight: 500,
-            textDecoration: 'none',
-            transition: 'background 0.1s',
-            fontFamily: 'Inter, sans-serif',
-          }}
-          title="Innovation Features Demo"
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.1)';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'transparent';
-          }}
-        >
-          <span>✨</span>
-          <span>Innovation</span>
-        </a>
-        
         {/* Settings button */}
         <button
           onClick={onSettingsOpen}

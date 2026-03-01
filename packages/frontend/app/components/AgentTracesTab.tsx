@@ -1,8 +1,16 @@
 'use client';
 
 import { useAgentTraceStore } from '@/stores/agentTraceStore';
-import type { ReActStep } from '@vigia/shared';
 import { useEffect, useState } from 'react';
+
+// Inline type to avoid cross-package import issues in Amplify
+interface ReActStep {
+  thought: string;
+  action: string;
+  actionInput: Record<string, unknown>;
+  observation: string;
+  finalAnswer?: string;
+}
 
 export function AgentTracesTab() {
   const { traces, filter, isStreaming, setFilter, connectSSE, disconnectSSE } = useAgentTraceStore();
