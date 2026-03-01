@@ -238,3 +238,54 @@ html, body {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+/* ─────────────────────────────────────────────
+   Panel block
+   ───────────────────────────────────────────── */
+
+.panel-block {
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  margin-bottom: 12px;
+}
+
+/* ─────────────────────────────────────────────
+   IDE Divider
+   ───────────────────────────────────────────── */
+
+.ide-divider {
+  height: 1px;
+  background: var(--c-border);
+  width: 100%;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────
+   IDE Border
+   ───────────────────────────────────────────── */
+
+.ide-border {
+  border: 1px solid var(--c-border);
+}
+
+/* ─────────────────────────────────────────────
+   Terminal block
+   ───────────────────────────────────────────── */
+
+.terminal-block {
+  background: var(--c-panel);
+  border-top: 1px solid var(--c-border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.92em;
+}
+
+/* ─────────────────────────────────────────────
+   Tab bar
+   ───────────────────────────────────────────── */
+
+.tab-bar {
+  background: var(--c-sidebar);
+  border-bottom: 1px solid var(--c-border);
+}

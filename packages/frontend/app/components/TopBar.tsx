@@ -7,12 +7,12 @@ import { Settings } from 'lucide-react';
 // ─────────────────────────────────────────────
 
 const C = {
-  bg:      '#080B10',
-  border:  'rgba(255,255,255,0.07)',
-  text:    '#DDE3ED',
-  textSec: '#7C8799',
-  textMut: '#3D4655',
-  accent:  '#3B82F6',
+  bg:      'var(--c-bg)',
+  border:  'var(--c-border)',
+  text:    'var(--c-text)',
+  textSec: 'var(--c-text-2)',
+  textMut: 'var(--c-text-3)',
+  accent:  'var(--c-accent-2)',
 };
 
 interface TopBarProps {

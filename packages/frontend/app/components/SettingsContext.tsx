@@ -6,7 +6,7 @@ import { createContext, useContext, useState, useCallback, useEffect } from 'rea
 // Types
 // ─────────────────────────────────────────────
 
-export type Theme    = 'dark' | 'darker' | 'high-contrast';
+export type Theme    = 'dark' | 'darker' | 'high-contrast' | 'light';
 export type MapStyle = 'dark-osm' | 'satellite' | 'terrain' | 'minimal';
 export type Density  = 'compact' | 'default' | 'spacious';
 
@@ -65,6 +65,20 @@ const THEMES: Record<Theme, Record<string, string>> = {
     '--c-text-3':    '#555555',
     '--c-accent':    '#4D90FE',
     '--c-accent-2':  '#74AAFF',
+  },
+  'light': {
+    '--c-bg':        '#F7FAFC',
+    '--c-sidebar':   '#F1F5F9',
+    '--c-panel':     '#FFFFFF',
+    '--c-elevated':  '#F8FAFC',
+    '--c-deep':      '#E2E8F0',
+    '--c-border':    '#CBD5E1',
+    '--c-border-md': '#94A3B8',
+    '--c-text':      '#1E293B',
+    '--c-text-2':    '#334155',
+    '--c-text-3':    '#64748B',
+    '--c-accent':    '#2563EB',
+    '--c-accent-2':  '#3B82F6',
   },
 };
 
