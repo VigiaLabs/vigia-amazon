@@ -244,7 +244,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           <div style={{ height: 1, background: 'var(--c-border)', margin: '8px 0' }} />
           <div style={{ padding: '12px 16px 20px' }}>
             <button
-              onClick={() => update({ theme: 'dark', mapStyle: 'dark-osm', density: 'default', showGrid: false, showLabels: true, fontSize: 18 })}
+              onClick={() => update({ theme: 'light', mapStyle: 'dark-osm', density: 'default', showGrid: false, showLabels: true, fontSize: 16 })}
               style={{
                 width: '100%', padding: '7px 0', borderRadius: 4,
                 border: '1px solid var(--c-border)', background: 'rgba(255,255,255,0.02)',

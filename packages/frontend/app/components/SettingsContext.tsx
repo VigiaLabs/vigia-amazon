@@ -42,6 +42,9 @@ const THEMES: Record<Theme, Record<string, string>> = {
     '--c-red-dim':    'rgba(217,79,92,0.11)',
     '--c-yellow':     '#C98B34',
     '--c-yellow-dim': 'rgba(201,139,52,0.11)',
+    '--c-input':      '#0D1219',
+    '--c-hover':      'rgba(255,255,255,0.05)',
+    '--c-overlay':    'rgba(10,14,21,0.90)',
   },
   'darker': {
     '--c-bg':         '#05070C',
@@ -69,6 +72,9 @@ const THEMES: Record<Theme, Record<string, string>> = {
     '--c-red-dim':    'rgba(196,68,80,0.11)',
     '--c-yellow':     '#B87C2A',
     '--c-yellow-dim': 'rgba(184,124,42,0.11)',
+    '--c-input':      '#050810',
+    '--c-hover':      'rgba(255,255,255,0.05)',
+    '--c-overlay':    'rgba(5,7,12,0.92)',
   },
   'high-contrast': {
     '--c-bg':         '#000000',
@@ -96,6 +102,9 @@ const THEMES: Record<Theme, Record<string, string>> = {
     '--c-red-dim':    'rgba(255,96,112,0.15)',
     '--c-yellow':     '#FFBE4A',
     '--c-yellow-dim': 'rgba(255,190,74,0.15)',
+    '--c-input':      '#050505',
+    '--c-hover':      'rgba(255,255,255,0.08)',
+    '--c-overlay':    'rgba(0,0,0,0.94)',
   },
   'light': {
     '--c-bg':         '#F4F7FC',
@@ -123,6 +132,9 @@ const THEMES: Record<Theme, Record<string, string>> = {
     '--c-red-dim':    'rgba(180,32,48,0.1)',
     '--c-yellow':     '#9A6010',
     '--c-yellow-dim': 'rgba(154,96,16,0.1)',
+    '--c-input':      '#FFFFFF',
+    '--c-hover':      'rgba(0,0,0,0.05)',
+    '--c-overlay':    'rgba(255,255,255,0.92)',
   },
 };
 
@@ -145,14 +157,27 @@ export function useSettings() {
   return ctx;
 }
 
+const STORAGE_KEY = 'vigia-settings';
+
 const DEFAULTS: AppSettings = {
-  theme:      'dark',
+  theme:      'light',
   mapStyle:   'dark-osm',
   density:    'default',
   showGrid:   false,
   showLabels: true,
-  fontSize:   13,
+  fontSize:   16,
 };
+
+function loadSettings(): AppSettings {
+  if (typeof window === 'undefined') return DEFAULTS;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULTS;
+    return { ...DEFAULTS, ...JSON.parse(raw) } as AppSettings;
+  } catch {
+    return DEFAULTS;
+  }
+}
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULTS);
@@ -161,18 +186,24 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const root = document.documentElement;
     Object.entries(THEMES[s.theme]).forEach(([k, v]) => root.style.setProperty(k, v));
     Object.entries(DENSITY_VARS[s.density]).forEach(([k, v]) => root.style.setProperty(k, v));
-    const fs = Math.max(11, Math.min(16, s.fontSize));
+    const fs = Math.max(11, Math.min(24, s.fontSize));
     root.style.setProperty('--d-font-size', `${fs}px`);
     root.style.fontSize = `${fs}px`;
     root.classList.toggle('vigia-theme-light', s.theme === 'light');
   }, []);
 
-  useEffect(() => { applyToDOM(settings); }, []); // eslint-disable-line
+  // Load persisted settings on first mount
+  useEffect(() => {
+    const saved = loadSettings();
+    setSettings(saved);
+    applyToDOM(saved);
+  }, []); // eslint-disable-line
 
   const update = useCallback((partial: Partial<AppSettings>) => {
     setSettings(prev => {
       const next = { ...prev, ...partial };
       applyToDOM(next);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* quota exceeded */ }
       return next;
     });
   }, [applyToDOM]);

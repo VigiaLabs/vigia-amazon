@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, MapPin, Video, Terminal as TerminalIcon, Database, Radio, Server } from 'lucide-react';
+import { X, MapPin, Video, Terminal as TerminalIcon, Database, Radio } from 'lucide-react';
 import { VideoUploader }        from './components/VideoUploader';
 import { LiveMap }              from './components/LiveMap';
 import { LedgerTicker }         from './components/LedgerTicker';
@@ -149,9 +149,9 @@ export default function Dashboard() {
   };
 
   const consoleTabs = [
-    { id: 'traces'  as ConsoleTab, label: 'Agent Traces', icon: <Radio    size={13} /> },
-    { id: 'ledger'  as ConsoleTab, label: 'DePIN Ledger', icon: <Database size={13} /> },
-    { id: 'console' as ConsoleTab, label: 'Console',      icon: <Server   size={13} /> },
+    { id: 'traces'  as ConsoleTab, label: 'Agent Traces', icon: <Radio        size={11} /> },
+    { id: 'ledger'  as ConsoleTab, label: 'DePIN Ledger', icon: <Database      size={11} /> },
+    { id: 'console' as ConsoleTab, label: 'Console',      icon: <TerminalIcon  size={11} /> },
   ];
 
   // ── Tab button style ──────────────────────
@@ -159,7 +159,7 @@ export default function Dashboard() {
     position: 'relative', display: 'flex', alignItems: 'center', gap: 7,
     height: '100%', padding: '0 14px', minWidth: 110, flexShrink: 0,
     cursor: 'pointer', border: 'none',
-    borderRight: '1px solid rgba(255,255,255,0.05)',
+    borderRight: '1px solid var(--c-border)',
     background: active ? 'var(--c-panel)' : 'transparent',
     color: active ? 'var(--c-text)' : 'var(--c-text-3)',
     fontSize: '0.76rem', fontWeight: active ? 500 : 400,
@@ -254,7 +254,7 @@ export default function Dashboard() {
                       width: 16, height: 16, marginLeft: 2, color: 'var(--c-text-3)',
                       cursor: 'pointer', borderRadius: 3, transition: 'background 0.1s, color 0.1s',
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLElement).style.color = 'var(--c-text)'; }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--c-text)'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--c-text-3)'; }}
                     >
                       <X size={10} />
@@ -364,7 +364,7 @@ export default function Dashboard() {
               height: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'var(--c-sidebar)', cursor: 'ns-resize',
             }}>
-              <div className="drag-pip" style={{ width: 24, height: 2, borderRadius: 2, background: 'rgba(255,255,255,0.08)', transition: 'background 0.15s' }} />
+              <div className="drag-pip" style={{ width: 24, height: 2, borderRadius: 2, background: 'var(--c-border)', transition: 'background 0.15s' }} />
             </div>
 
             {/* Console Tab Bar */}
@@ -372,23 +372,20 @@ export default function Dashboard() {
               display: 'flex', alignItems: 'center', height: 34, flexShrink: 0,
               background: 'var(--c-sidebar)', borderBottom: '1px solid var(--c-border)',
             }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '0 12px', height: '100%',
-                borderRight: '1px solid var(--c-border)', color: 'var(--c-text-3)',
-              }}>
-                <TerminalIcon size={11} />
-                <span style={{ fontSize: '0.60rem', letterSpacing: '0.09em', textTransform: 'uppercase', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: 600 }}>
-                  Console
-                </span>
-              </div>
-
               {consoleTabs.map((tab) => {
                 const active = activeConsoleTab === tab.id;
                 return (
-                  <button key={tab.id} onClick={() => switchConsoleTab(tab.id)} style={tabBtn(active)}
-                  onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'; }}
-                  onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                  <button key={tab.id} onClick={() => switchConsoleTab(tab.id)}
+                    style={{
+                      ...tabBtn(active),
+                      fontSize: '0.60rem',
+                      letterSpacing: '0.09em',
+                      textTransform: 'uppercase',
+                      fontWeight: active ? 600 : 500,
+                      gap: 6,
+                    }}
+                    onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)'; }}
+                    onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                   >
                     <span style={{ color: active ? 'var(--c-rose)' : 'var(--c-text-3)' }}>{tab.icon}</span>
                     {tab.label}

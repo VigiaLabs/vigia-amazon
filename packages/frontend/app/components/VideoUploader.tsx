@@ -23,19 +23,19 @@ export type SignedTelemetry = {
 // ─────────────────────────────────────────────
 
 const C = {
-  bg:       '#1E1F22',      // JetBrains dark bg
-  panel:    '#2B2D30',      // Tool window bg
-  elevated: '#3C3F41',      // Elevated surfaces
-  border:   '#393B40',      // Border color
-  borderMd: '#4E5157',      // Medium border
-  text:     '#BCBEC4',      // Primary text
-  textSec:  '#8C8C8C',      // Secondary text  
-  textMut:  '#5E6060',      // Muted text
-  accent:   '#3574F0',      // JetBrains blue
-  accentBrt:'#589DF6',      // Bright blue
-  green:    '#59A869',      // Success green
-  red:      '#F75464',      // Error red
-  yellow:   '#E8BF6A',      // Warning yellow
+  bg:       'var(--c-bg)',
+  panel:    'var(--c-panel)',
+  elevated: 'var(--c-elevated)',
+  border:   'var(--c-border)',
+  borderMd: 'var(--c-border-md)',
+  text:     'var(--c-text)',
+  textSec:  'var(--c-text-2)',
+  textMut:  'var(--c-text-3)',
+  accent:   'var(--c-accent-2)',
+  accentBrt:'var(--c-accent-2)',
+  green:    'var(--c-green)',
+  red:      'var(--c-red)',
+  yellow:   'var(--c-yellow)',
 };
 
 const FONT = "'JetBrains Mono', 'Fira Code', 'Consolas', monospace";
@@ -146,7 +146,7 @@ function DropZone({ accept, onFile, label, sublabel, icon, file, compact }: Drop
         width: compact ? 28 : 36,
         height: compact ? 28 : 36,
         borderRadius: 3,
-        background: file ? 'rgba(89,168,105,0.15)' : C.elevated,
+        background: file ? 'var(--c-green-dim)' : C.elevated,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -175,7 +175,7 @@ function DropZone({ accept, onFile, label, sublabel, icon, file, compact }: Drop
       {file && (
         <div style={{
           fontSize: '0.6rem', padding: '2px 6px', borderRadius: 2,
-          background: 'rgba(89,168,105,0.15)', color: C.green,
+          background: 'var(--c-green-dim)', color: C.green,
           fontFamily: FONT, fontWeight: 600,
           flexShrink: 0,
           textTransform: 'uppercase',
@@ -595,7 +595,7 @@ export function VideoUploader() {
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '4px 8px', borderRadius: 3,
-            background: 'rgba(247,84,100,0.12)',
+            background: 'var(--c-red-dim)',
             border: `1px solid ${C.border}`,
           }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.red }} className="pulse" />
@@ -647,7 +647,7 @@ export function VideoUploader() {
             <div style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '4px 8px', borderRadius: 2,
-              background: 'rgba(89,168,105,0.1)',
+              background: 'var(--c-green-dim)',
               border: `1px solid ${C.border}`,
             }}>
               <CheckCircle size={10} style={{ color: C.green }} />
@@ -728,7 +728,7 @@ export function VideoUploader() {
             </div>
 
             {/* Video canvas */}
-            <div style={{ position: 'relative', background: '#18191B', aspectRatio: '16/9' }}>
+            <div style={{ position: 'relative', background: 'var(--c-bg)', aspectRatio: '16/9' }}>
               <video 
                 ref={videoCallbackRef} 
                 playsInline
@@ -888,7 +888,7 @@ export function VideoUploader() {
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '6px 14px', borderRadius: 3,
                 border: `1px solid ${C.border}`,
-                background: isProcessing ? 'rgba(247,84,100,0.1)' : C.panel,
+                background: isProcessing ? 'var(--c-red-dim)' : C.panel,
                 color: isProcessing ? C.red : C.textMut,
                 fontSize: '0.7rem', fontWeight: 500,
                 cursor: !isProcessing ? 'not-allowed' : 'pointer',

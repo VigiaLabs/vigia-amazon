@@ -1,6 +1,6 @@
 'use client';
 
-import { User, CheckCircle, AlertTriangle, Cpu, Wifi, Activity, GitBranch } from 'lucide-react';
+import { User, CheckCircle, AlertTriangle, Cpu, Wifi, Activity } from 'lucide-react';
 
 function StatusItem({ children, borderLeft = true, accentBg = false }: {
   children: React.ReactNode; borderLeft?: boolean; accentBg?: boolean;
@@ -32,10 +32,6 @@ export function StatusBar() {
         <StatusItem borderLeft={false} accentBg>
           <User size={10} style={{ color: '#fff' }} />
           <span style={{ ...S, color: '#fff', fontWeight: 500 }}>user</span>
-        </StatusItem>
-        <StatusItem>
-          <GitBranch size={10} style={{ color: 'var(--c-rose)', opacity: 0.8 }} />
-          <span style={M}>main</span>
         </StatusItem>
         <StatusItem>
           <CheckCircle size={10} style={{ color: 'var(--c-green)' }} />

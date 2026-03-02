@@ -7,12 +7,12 @@ import { HazardVerificationPanel } from './HazardVerificationPanel';
 
 // JetBrains IDE color palette
 const C = {
-  bg: '#1E1F22',
-  panel: '#2B2D30',
-  border: '#393B40',
-  accent: '#3574F0',
-  text: '#BCBEC4',
-  textMut: '#6F737A',
+  bg:      'var(--c-bg)',
+  panel:   'var(--c-panel)',
+  border:  'var(--c-border)',
+  accent:  'var(--c-accent-2)',
+  text:    'var(--c-text)',
+  textMut: 'var(--c-text-3)',
 };
 
 export function DetectionModeView() {
@@ -102,7 +102,7 @@ export function DetectionModeView() {
           flexShrink: 0,
           transition: 'background 0.15s',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(53, 116, 240, 0.2)')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-accent-glow)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
         <div style={{ 
@@ -175,7 +175,7 @@ export function DetectionModeView() {
           flexShrink: 0,
           transition: 'background 0.15s',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(53, 116, 240, 0.2)')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-accent-glow)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
         <div style={{ 
@@ -228,18 +228,8 @@ export function DetectionModeView() {
             alignItems: 'center',
             gap: 6,
           }}>
-            <span style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: '#3FB950',
-              animation: 'pulse 2s infinite',
-            }} />
-            <span style={{
-              fontSize: '0.6rem',
-              color: '#3FB950',
-              fontFamily: 'JetBrains Mono, monospace',
-            }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--c-green)', animation: 'pulse 2s infinite' }} />
+            <span style={{ fontSize: '0.6rem', color: 'var(--c-green)', fontFamily: 'JetBrains Mono, monospace' }}>
               LIVE
             </span>
           </div>

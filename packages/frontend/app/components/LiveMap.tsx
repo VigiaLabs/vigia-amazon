@@ -350,7 +350,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
           position: 'absolute', top: 10, left: 10,
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '6px 10px', borderRadius: 4,
-          background: 'rgba(6,9,16,0.88)',
+          background: 'var(--c-overlay)',
           border: '1px solid var(--c-rose-border)',
           backdropFilter: 'blur(8px)',
           zIndex: 5, pointerEvents: 'none',
@@ -398,7 +398,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
                 fontWeight: active ? 600 : 400,
                 letterSpacing: '0.05em',
                 border: `1px solid ${active ? 'var(--c-rose-border)' : 'var(--c-border)'}`,
-                background: active ? 'rgba(6,9,16,0.95)' : 'rgba(6,9,16,0.80)',
+                background: active ? 'var(--c-elevated)' : 'var(--c-overlay)',
                 color: active ? 'var(--c-rose-2)' : 'var(--c-text-3)',
                 backdropFilter: 'blur(8px)',
                 transition: 'all 0.15s',
@@ -428,7 +428,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
             fontFamily: 'IBM Plex Mono, monospace', fontSize: '0.60rem', fontWeight: 600,
             letterSpacing: '0.05em', textTransform: 'uppercase',
             border: `1px solid ${settings.showGrid ? 'var(--c-rose-border)' : 'var(--c-border)'}`,
-            background: settings.showGrid ? 'rgba(123,84,130,0.18)' : 'rgba(6,9,16,0.80)',
+            background: settings.showGrid ? 'var(--c-rose-dim)' : 'var(--c-overlay)',
             color: settings.showGrid ? 'var(--c-rose-2)' : 'var(--c-text-3)',
             backdropFilter: 'blur(8px)',
             transition: 'all 0.15s',
@@ -455,7 +455,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
             fontFamily: 'IBM Plex Mono, monospace', fontSize: '0.60rem', fontWeight: 600,
             letterSpacing: '0.05em', textTransform: 'uppercase',
             border: `1px solid ${settings.showLabels ? 'var(--c-accent-glow)' : 'var(--c-border)'}`,
-            background: settings.showLabels ? 'rgba(26,64,190,0.15)' : 'rgba(6,9,16,0.80)',
+            background: settings.showLabels ? 'var(--c-accent-glow)' : 'var(--c-overlay)',
             color: settings.showLabels ? 'var(--c-accent-2)' : 'var(--c-text-3)',
             backdropFilter: 'blur(8px)',
             transition: 'all 0.15s',
@@ -484,11 +484,11 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
           <label style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '5px 10px', borderRadius: 4, cursor: 'pointer',
-            background: 'rgba(6,9,16,0.88)',
+            background: 'var(--c-overlay)',
             border: '1px solid var(--c-border)',
             backdropFilter: 'blur(8px)',
           }}>
-            <div className="vigia-toggle" style={{ background: showUnverified ? 'var(--c-accent)' : 'rgba(255,255,255,0.08)' }}>
+            <div className="vigia-toggle" style={{ background: showUnverified ? 'var(--c-accent)' : 'var(--c-border-md)' }}>
               <div className="vigia-toggle-thumb" style={{ transform: showUnverified ? 'translateX(14px)' : 'translateX(2px)' }} />
             </div>
             <input type="checkbox" checked={showUnverified} onChange={e => setShowUnverified(e.target.checked)} style={{ display: 'none' }} />

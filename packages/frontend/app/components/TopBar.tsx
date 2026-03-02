@@ -1,35 +1,17 @@
 'use client';
 
-import { Settings, AlertTriangle, Activity, GitBranch, Command, Search } from 'lucide-react';
+import { Settings, AlertTriangle, Activity, Command, Search } from 'lucide-react';
 
 interface TopBarProps {
   onSettingsOpen?: () => void;
   onCommandOpen?:  () => void;
 }
 
-function StatusDot({ label, ok = true }: { label: string; ok?: boolean }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 5,
-      padding: '0 10px', height: '100%',
-      borderRight: '1px solid var(--c-border)',
-    }}>
-      <span className="pulse" style={{
-        width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
-        background: ok ? 'var(--c-green)' : 'var(--c-red)',
-      }} />
-      <span style={{ fontSize: '0.63rem', color: 'var(--c-text-3)', fontFamily: 'IBM Plex Sans, sans-serif' }}>
-        {label}
-      </span>
-    </div>
-  );
-}
-
 export function TopBar({ onSettingsOpen, onCommandOpen }: TopBarProps) {
   return (
     <header style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      height: 34, flexShrink: 0,
+      display: 'flex', alignItems: 'center',
+      height: 34, flexShrink: 0, position: 'relative',
       background: 'var(--c-deep)',
       borderBottom: '1px solid var(--c-border)',
       userSelect: 'none',
@@ -84,7 +66,7 @@ export function TopBar({ onSettingsOpen, onCommandOpen }: TopBarProps) {
             fontFamily: 'IBM Plex Sans, sans-serif',
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
+            (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)';
             (e.currentTarget as HTMLElement).style.color = 'var(--c-text-2)';
           }}
           onMouseLeave={(e) => {
@@ -96,7 +78,8 @@ export function TopBar({ onSettingsOpen, onCommandOpen }: TopBarProps) {
         ))}
       </div>
 
-      {/* ── Center: ⌘K search bar ─────────── */}
+      {/* ── Center: ⌘K search bar — absolutely centered like VS Code ───── */}
+      <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', display: 'flex' }}>
       <button
         onClick={onCommandOpen}
         className="btn-lift"
@@ -134,13 +117,10 @@ export function TopBar({ onSettingsOpen, onCommandOpen }: TopBarProps) {
           <span style={{ fontSize: '0.60rem', color: 'var(--c-text-3)', fontFamily: 'IBM Plex Mono, monospace' }}>K</span>
         </div>
       </button>
+      </div>
 
       {/* ── Right ─────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', height: '100%', borderLeft: '1px solid var(--c-border)' }}>
-
-        <StatusDot label="Edge"   ok />
-        <StatusDot label="Cloud"  ok />
-        <StatusDot label="Ledger" ok />
+      <div style={{ display: 'flex', alignItems: 'center', height: '100%', borderLeft: '1px solid var(--c-border)', marginLeft: 'auto' }}>
 
         {/* Hazards */}
         <div style={{
@@ -166,18 +146,6 @@ export function TopBar({ onSettingsOpen, onCommandOpen }: TopBarProps) {
           </span>
         </div>
 
-        {/* Branch */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 5,
-          padding: '0 10px', height: '100%',
-          borderRight: '1px solid var(--c-border)',
-        }}>
-          <GitBranch size={11} style={{ color: 'var(--c-rose)', opacity: 0.7 }} />
-          <span style={{ fontSize: '0.63rem', color: 'var(--c-text-3)', fontFamily: 'IBM Plex Sans, sans-serif' }}>
-            main
-          </span>
-        </div>
-
         {/* Settings */}
         <button onClick={onSettingsOpen} title="Settings (⌘,)" className="icon-hover" style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -186,7 +154,7 @@ export function TopBar({ onSettingsOpen, onCommandOpen }: TopBarProps) {
           transition: 'background 0.1s, color 0.12s',
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)';
+          (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)';
           (e.currentTarget as HTMLElement).style.color = 'var(--c-rose-2)';
         }}
         onMouseLeave={(e) => {

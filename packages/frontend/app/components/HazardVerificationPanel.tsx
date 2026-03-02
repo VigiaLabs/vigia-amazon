@@ -4,16 +4,16 @@ import { useEffect, useState, useRef } from 'react';
 import { AlertTriangle, CheckCircle, XCircle, Clock, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 
 const C = {
-  bg: '#141920',
-  panel: '#1E2530',
-  border: 'rgba(255,255,255,0.07)',
-  text: '#DDE3ED',
-  textSec: '#7C8799',
-  textMut: '#3D4655',
-  accent: '#3B82F6',
-  green: '#0EA472',
-  red: '#E5484D',
-  yellow: '#E9A23B',
+  bg:      'var(--c-bg)',
+  panel:   'var(--c-panel)',
+  border:  'var(--c-border)',
+  text:    'var(--c-text)',
+  textSec: 'var(--c-text-2)',
+  textMut: 'var(--c-text-3)',
+  accent:  'var(--c-accent-2)',
+  green:   'var(--c-green)',
+  red:     'var(--c-red)',
+  yellow:  'var(--c-yellow)',
 };
 
 // Simple Geohash Encoder (7 chars precision)
@@ -494,7 +494,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                   key={hazard.id}
                   style={{
                     background: C.panel,
-                    border: `1px solid ${currentlyVerifying === hazard.id ? '#3574F0' : C.border}`,
+                    border: `1px solid ${currentlyVerifying === hazard.id ? 'var(--c-accent-2)' : C.border}`,
                     borderRadius: 4,
                     overflow: 'hidden',
                     transition: 'border-color 0.3s ease',
@@ -514,7 +514,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                       cursor: 'pointer',
                       transition: 'background 0.15s',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-hover)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
                     {/* Expand Icon */}
@@ -566,7 +566,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                     <div style={{
                       padding: '8px 10px',
                       borderTop: `1px solid ${C.border}`,
-                      background: 'rgba(0,0,0,0.2)',
+                      background: 'var(--c-elevated)',
                     }}>
                       <div style={{
                         display: 'flex',
@@ -600,7 +600,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                           <div style={{
                             marginTop: 6,
                             padding: 8,
-                            background: 'rgba(0,0,0,0.3)',
+                            background: 'var(--c-elevated)',
                             borderRadius: 3,
                             border: `1px solid ${C.border}`,
                           }}>

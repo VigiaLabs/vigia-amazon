@@ -3,15 +3,36 @@
 import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { useSettings } from './SettingsContext';
 
 const C = {
-  bg: '#0A0E14',
-  panel: '#141920',
-  border: 'rgba(0, 255, 0, 0.2)',
-  text: '#00FF00',
-  textDim: '#00AA00',
-  accent: '#00FF00',
+  bg:      'var(--c-bg)',
+  panel:   'var(--c-panel)',
+  elevated:'var(--c-elevated)',
+  border:  'var(--c-border)',
+  text:    'var(--c-text)',
+  textSec: 'var(--c-text-2)',
+  textMut: 'var(--c-text-3)',
+  accent:  'var(--c-accent-2)',
+  green:   'var(--c-green)',
 };
+
+const FONT = "'IBM Plex Sans', sans-serif";
+const MONO = "'JetBrains Mono', monospace";
+
+// Resolve accent color for MapLibre (which can't use CSS vars)
+const getAccentHex = (theme: string) =>
+  theme === 'light' ? '#2563EB' : theme === 'high-contrast' ? '#78AAFF' : '#4278F5';
+
+// Resolve background color for map fallback style
+const getBgHex = (theme: string) =>
+  theme === 'light' ? '#F4F7FC' : theme === 'darker' ? '#05070C' : theme === 'high-contrast' ? '#000000' : '#0A0E15';
+
+// Resolve raster tint for OSM tiles
+const getOSMPaint = (theme: string): Record<string, number> =>
+  theme === 'light'
+    ? { 'raster-opacity': 0.9, 'raster-saturation': -0.3, 'raster-brightness-max': 1.0, 'raster-contrast': 0.1 }
+    : { 'raster-opacity': 0.5, 'raster-saturation': -1,   'raster-brightness-max': 0.6, 'raster-contrast': 0.3 };
 
 // Demo data: Active nodes in India (simulating real VIGIA users)
 const DEMO_NODES = [
@@ -111,6 +132,8 @@ const generateCityRoads = (node: typeof DEMO_NODES[0], index: number) => {
 };
 
 export function NetworkMapView() {
+  const { settings } = useSettings();
+  const accentHex = getAccentHex(settings.theme);
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -136,38 +159,26 @@ export function NetworkMapView() {
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
-    // Initialize map with dark surveillance style
+    // Resolve Amazon Location Service style URL (same pattern as LiveMap)
+    const apiKey    = process.env.NEXT_PUBLIC_LOCATION_API_KEY || '';
+    const mapName   = process.env.NEXT_PUBLIC_MAP_NAME || '';
+    const awsStyle  = apiKey && mapName
+      ? `https://maps.geo.us-east-1.amazonaws.com/maps/v0/maps/${mapName}/style-descriptor?key=${apiKey}`
+      : {
+          version: 8 as const,
+          sources: {
+            'osm': { type: 'raster' as const, tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19 },
+          },
+          layers: [
+            { id: 'background', type: 'background' as const, paint: { 'background-color': getBgHex(settings.theme) } },
+            { id: 'osm-tiles',  type: 'raster'     as const, source: 'osm', paint: { ...getOSMPaint(settings.theme) } },
+          ],
+        };
+
+    // Initialize map
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: {
-        version: 8,
-        sources: {
-          'raster-tiles': {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-          },
-        },
-        layers: [
-          {
-            id: 'background',
-            type: 'background',
-            paint: { 'background-color': '#0A0E14' },
-          },
-          {
-            id: 'simple-tiles',
-            type: 'raster',
-            source: 'raster-tiles',
-            paint: {
-              'raster-opacity': 0.5, // Higher visibility base map
-              'raster-brightness-min': 0,
-              'raster-brightness-max': 0.6,
-              'raster-saturation': -1, // Grayscale
-              'raster-contrast': 0.3, // Add contrast
-            },
-          },
-        ],
-      },
+      style: awsStyle as any,
       center: [78.9629, 20.5937], // Center of India
       zoom: 4.5,
       attributionControl: false,
@@ -202,14 +213,14 @@ export function NetworkMapView() {
         type: 'line',
         source: 'roads',
         paint: {
-          'line-color': '#00FF00',
+          'line-color': accentHex,
           'line-width': [
             'interpolate', ['linear'], ['zoom'],
             4, 4,
             8, 8,
             12, 12,
           ],
-          'line-opacity': 0.2,
+          'line-opacity': 0.15,
           'line-blur': 3,
         },
       });
@@ -220,7 +231,7 @@ export function NetworkMapView() {
         type: 'line',
         source: 'roads',
         paint: {
-          'line-color': '#00FF00',
+          'line-color': accentHex,
           'line-width': [
             'interpolate', ['linear'], ['zoom'],
             4, 1.5,
@@ -256,7 +267,7 @@ export function NetworkMapView() {
         source: 'nodes',
         paint: {
           'circle-radius': 25,
-          'circle-color': '#00FF00',
+          'circle-color': accentHex,
           'circle-opacity': 0.15,
           'circle-blur': 1,
         },
@@ -269,7 +280,7 @@ export function NetworkMapView() {
         source: 'nodes',
         paint: {
           'circle-radius': 15,
-          'circle-color': '#00FF00',
+          'circle-color': accentHex,
           'circle-opacity': 0.35,
           'circle-blur': 0.8,
         },
@@ -282,11 +293,11 @@ export function NetworkMapView() {
         source: 'nodes',
         paint: {
           'circle-radius': 8,
-          'circle-color': '#00FF00',
+          'circle-color': accentHex,
           'circle-opacity': 1,
           'circle-stroke-width': 2,
           'circle-stroke-color': '#FFFFFF',
-          'circle-stroke-opacity': 0.8,
+          'circle-stroke-opacity': 0.6,
         },
       });
 
@@ -325,60 +336,88 @@ export function NetworkMapView() {
     };
   }, []);
 
+  // Update map layer colors when theme changes
+  useEffect(() => {
+    if (!mapReady || !map.current) return;
+    const m = map.current;
+    const hex = accentHex;
+    try {
+      m.setPaintProperty('roads-glow',        'line-color',   hex);
+      m.setPaintProperty('roads-layer',       'line-color',   hex);
+      m.setPaintProperty('nodes-glow-outer',  'circle-color', hex);
+      m.setPaintProperty('nodes-glow',        'circle-color', hex);
+      m.setPaintProperty('nodes-layer',       'circle-color', hex);
+      // Also update background for keyless OSM fallback
+      if (m.getLayer('background')) {
+        m.setPaintProperty('background', 'background-color', getBgHex(settings.theme));
+      }
+      if (m.getLayer('osm-tiles')) {
+        const p = getOSMPaint(settings.theme);
+        Object.entries(p).forEach(([k, v]) => m.setPaintProperty('osm-tiles', k, v));
+      }
+    } catch (_) { /* layers may not exist yet */ }
+  }, [settings.theme, mapReady]);
+
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: C.bg }}>
       {/* Header */}
       <div style={{
-        padding: '12px 16px',
+        padding: '0 16px',
+        height: 38, flexShrink: 0,
         borderBottom: `1px solid ${C.border}`,
         background: C.panel,
+        display: 'flex', alignItems: 'center',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: C.text, fontFamily: 'Inter, sans-serif' }}>
-              VIGIA NETWORK SURVEILLANCE
-            </h2>
-            <p style={{ margin: '4px 0 0', fontSize: 11, color: C.textDim, fontFamily: 'JetBrains Mono, monospace' }}>
-              Real-time road intelligence network
-            </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: C.text, fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Network Surveillance
+            </span>
+            <span style={{ fontSize: '0.6rem', color: C.textMut, fontFamily: MONO }}>
+              Real-time road intelligence
+            </span>
           </div>
-          
+
           {/* Stats */}
-          <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: 24, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
+          <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 20, fontFamily: MONO, fontSize: '0.62rem' }}>
               <div>
-                <div style={{ color: C.textDim }}>ACTIVE NODES</div>
-                <div style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>{stats.totalNodes}</div>
+                <div style={{ color: C.textMut, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 1 }}>Active Nodes</div>
+                <div style={{ color: C.accent, fontSize: '0.82rem', fontWeight: 600 }}>{stats.totalNodes}</div>
               </div>
               <div>
-                <div style={{ color: C.textDim }}>TOTAL SESSIONS</div>
-                <div style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>{stats.totalSessions}</div>
+                <div style={{ color: C.textMut, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 1 }}>Total Sessions</div>
+                <div style={{ color: C.accent, fontSize: '0.82rem', fontWeight: 600 }}>{stats.totalSessions}</div>
               </div>
               <div>
-                <div style={{ color: C.textDim }}>AVG COVERAGE</div>
-                <div style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>{stats.avgCoverage}%</div>
+                <div style={{ color: C.textMut, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 1 }}>Avg Coverage</div>
+                <div style={{ color: C.accent, fontSize: '0.82rem', fontWeight: 600 }}>{stats.avgCoverage}%</div>
               </div>
             </div>
-            
+
             {isZoomedIn && (
               <button
                 onClick={zoomOut}
                 style={{
-                  background: 'rgba(0, 255, 0, 0.15)',
+                  background: 'var(--c-accent-glow)',
                   border: `1px solid ${C.border}`,
-                  borderRadius: 4,
-                  padding: '8px 12px',
-                  color: C.text,
+                  borderRadius: 3,
+                  padding: '4px 10px',
+                  color: C.accent,
                   cursor: 'pointer',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  fontSize: 11,
+                  fontFamily: MONO,
+                  fontSize: '0.62rem',
                   fontWeight: 600,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 6,
+                  gap: 5,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
                 }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)'}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--c-accent-glow)'}
               >
-                ← ZOOM OUT
+                ← Zoom Out
               </button>
             )}
           </div>
@@ -392,69 +431,62 @@ export function NetworkMapView() {
         {/* Node info overlay */}
         {selectedNode && (
           <div style={{
-            position: 'absolute',
-            top: 16,
-            right: 16,
-            background: 'rgba(10, 14, 20, 0.95)',
+            position: 'absolute', top: 12, right: 44,
+            background: 'var(--c-overlay)',
             border: `1px solid ${C.border}`,
             borderRadius: 4,
-            padding: 12,
+            padding: '10px 12px',
             minWidth: 200,
-            fontFamily: 'JetBrains Mono, monospace',
-            fontSize: 11,
+            fontFamily: MONO,
+            fontSize: '0.65rem',
+            backdropFilter: 'blur(8px)',
+            zIndex: 5,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ color: C.text, fontWeight: 600 }}>NODE: {selectedNode.city.toUpperCase()}</span>
+              <span style={{ color: C.text, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {selectedNode.city}
+              </span>
               <button
                 onClick={() => setSelectedNode(null)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: C.text,
-                  cursor: 'pointer',
-                  fontSize: 16,
-                  padding: 0,
-                }}
+                style={{ background: 'transparent', border: 'none', color: C.textMut, cursor: 'pointer', fontSize: '1rem', padding: 0, display: 'flex', lineHeight: 1 }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = C.text}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = C.textMut}
               >
                 ×
               </button>
             </div>
-            <div style={{ color: C.textDim, marginBottom: 4 }}>
-              ID: {selectedNode.id}
+            <div style={{ color: C.textMut, marginBottom: 3 }}>ID: {selectedNode.id}</div>
+            <div style={{ color: C.textMut, marginBottom: 6 }}>{selectedNode.lat.toFixed(4)}, {selectedNode.lon.toFixed(4)}</div>
+            <div style={{ height: 1, background: C.border, marginBottom: 6 }} />
+            <div style={{ color: C.textSec, marginBottom: 3 }}>
+              Sessions: <span style={{ color: C.accent, fontWeight: 600 }}>{selectedNode.sessions}</span>
             </div>
-            <div style={{ color: C.textDim, marginBottom: 4 }}>
-              Location: {selectedNode.lat.toFixed(4)}, {selectedNode.lon.toFixed(4)}
-            </div>
-            <div style={{ height: 1, background: C.border, margin: '8px 0' }} />
-            <div style={{ color: C.text, marginBottom: 4 }}>
-              Sessions: <span style={{ color: C.accent }}>{selectedNode.sessions}</span>
-            </div>
-            <div style={{ color: C.text }}>
-              Coverage: <span style={{ color: C.accent }}>{selectedNode.coverage}%</span>
+            <div style={{ color: C.textSec }}>
+              Coverage: <span style={{ color: C.accent, fontWeight: 600 }}>{selectedNode.coverage}%</span>
             </div>
           </div>
         )}
 
         {/* Legend */}
         <div style={{
-          position: 'absolute',
-          bottom: 16,
-          left: 16,
-          background: 'rgba(10, 14, 20, 0.95)',
+          position: 'absolute', bottom: 16, left: 10,
+          background: 'var(--c-overlay)',
           border: `1px solid ${C.border}`,
           borderRadius: 4,
-          padding: 12,
-          fontFamily: 'JetBrains Mono, monospace',
-          fontSize: 11,
+          padding: '8px 12px',
+          fontFamily: MONO,
+          fontSize: '0.62rem',
+          backdropFilter: 'blur(8px)',
+          zIndex: 5,
         }}>
-          <div style={{ color: C.text, fontWeight: 600, marginBottom: 8 }}>LEGEND</div>
+          <div style={{ color: C.textMut, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.58rem' }}>Legend</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: C.accent }} />
-            <span style={{ color: C.textDim }}>Active Node</span>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: C.accent, flexShrink: 0 }} />
+            <span style={{ color: C.textSec }}>Active Node</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 16, height: 2, background: C.accent, opacity: 0.4 }} />
-            <span style={{ color: C.textDim }}>Covered Road</span>
+            <div style={{ width: 16, height: 2, background: C.accent, opacity: 0.5, flexShrink: 0 }} />
+            <span style={{ color: C.textSec }}>Covered Road</span>
           </div>
         </div>
       </div>
