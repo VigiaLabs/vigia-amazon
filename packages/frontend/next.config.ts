@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
   reactCompiler: true,
-  turbopack: {}, // Silence Turbopack warning
+  // Note: 'standalone' output is NOT used — Amplify Hosting manages the SSR runtime
 };
 
 export default nextConfig;
