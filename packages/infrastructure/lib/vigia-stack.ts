@@ -1,4 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { IngestionStack } from './stacks/ingestion-stack';
 import { IntelligenceStack } from './stacks/intelligence-stack';
@@ -33,6 +35,21 @@ export class VigiaStack extends cdk.Stack {
       hazardsTable: ingestionStack.hazardsTable,
       ledgerTable: trustStack.ledgerTable,
     });
+
+    // Add verify-hazard-sync endpoint to ingestion API
+    if (intelligenceWithHazardsStack.verifyHazardSyncFn) {
+      const verifySync = ingestionStack.api.root.addResource('verify-hazard-sync', {
+        defaultCorsPreflightOptions: {
+          allowOrigins: apigateway.Cors.ALL_ORIGINS,
+          allowMethods: ['POST', 'OPTIONS'],
+          allowHeaders: ['Content-Type', 'Authorization'],
+          maxAge: cdk.Duration.days(1),
+        },
+      });
+      verifySync.addMethod('POST', new apigateway.LambdaIntegration(intelligenceWithHazardsStack.verifyHazardSyncFn, {
+        timeout: cdk.Duration.seconds(29), // Max API Gateway allows
+      }));
+    }
 
     // Update ingestion stack to use the new traces table with GSI
     const tracesByHazardFn = ingestionStack.node.findChild('TracesByHazardFunction') as any;

@@ -16,6 +16,7 @@ export class IntelligenceStack extends Construct {
   public readonly cooldownTable: dynamodb.Table;
   public readonly tracesTable: dynamodb.Table;
   public readonly bedrockRouterFn: lambda.Function;
+  public readonly verifyHazardSyncFn?: lambdaNodejs.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: IntelligenceStackProps) {
     super(scope, id);
@@ -114,6 +115,34 @@ export class IntelligenceStack extends Construct {
           startingPosition: lambda.StartingPosition.LATEST,
           batchSize: 10,
           retryAttempts: 2,
+        })
+      );
+
+      // Synchronous Verification Lambda (for interactive demo)
+      this.verifyHazardSyncFn = new lambdaNodejs.NodejsFunction(this, 'VerifyHazardSyncFunction', {
+        entry: path.join(__dirname, '../../../backend/functions/verify-hazard-sync/index.ts'),
+        handler: 'handler',
+        runtime: lambda.Runtime.NODEJS_20_X,
+        timeout: cdk.Duration.seconds(25), // Must be < 29s API Gateway limit
+        memorySize: 256,
+        bundling: {
+          externalModules: ['@aws-sdk/*'],
+        },
+        environment: {
+          TRACES_TABLE_NAME: this.tracesTable.tableName,
+          HAZARDS_TABLE_NAME: props.hazardsTable.tableName,
+          BEDROCK_AGENT_ID: 'TAWWC3SQ0L',
+          BEDROCK_AGENT_ALIAS_ID: 'TSTALIASID',
+        },
+      });
+
+      // Grant permissions
+      this.tracesTable.grantWriteData(this.verifyHazardSyncFn);
+      props.hazardsTable.grantWriteData(this.verifyHazardSyncFn);
+      this.verifyHazardSyncFn.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['bedrock:InvokeAgent'],
+          resources: ['*'],
         })
       );
     }

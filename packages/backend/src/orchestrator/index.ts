@@ -20,17 +20,48 @@ function hashContributorId(signature: string): string {
 }
 
 async function parseAgentResponse(response: any): Promise<any> {
-  // Parse Bedrock Agent streaming response
+  const steps: any[] = [];
   let completion = '';
   
   for await (const event of response.completion) {
+    // Capture ReAct trace steps
+    if (event.trace?.orchestrationTrace) {
+      const trace = event.trace.orchestrationTrace;
+      const step: any = {
+        thought: trace.rationale?.text || '',
+        action: trace.invocationInput?.actionGroupInvocationInput?.actionGroupName || '',
+        actionInput: {},
+        observation: '',
+      };
+      
+      // Parse action input parameters
+      if (trace.invocationInput?.actionGroupInvocationInput?.parameters) {
+        trace.invocationInput.actionGroupInvocationInput.parameters.forEach((param: any) => {
+          step.actionInput[param.name] = param.value;
+        });
+      }
+      
+      // Capture observation from action output
+      if (trace.observation?.actionGroupInvocationOutput?.text) {
+        step.observation = trace.observation.actionGroupInvocationOutput.text;
+      }
+      
+      steps.push(step);
+    }
+    
+    // Capture final completion
     if (event.chunk) {
       const chunk = new TextDecoder().decode(event.chunk.bytes);
       completion += chunk;
     }
   }
 
-  // Extract verification score from response
+  // Add final answer to last step
+  if (steps.length > 0 && completion) {
+    steps[steps.length - 1].finalAnswer = completion;
+  }
+
+  // Extract verification score from completion
   const scoreMatch = completion.match(/verification[_\s]?score[:\s]+(\d+)/i);
   const score = scoreMatch ? parseInt(scoreMatch[1]) : 0;
 
@@ -38,6 +69,7 @@ async function parseAgentResponse(response: any): Promise<any> {
     traceId: response.sessionId,
     reasoning: completion,
     verificationScore: score,
+    steps,
   };
 }
 
@@ -97,6 +129,7 @@ Verify this hazard and return your reasoning with a verification score (0-100).`
             agentAliasId: AGENT_ALIAS_ID,
             sessionId: `session-${geohash}-${Date.now()}`,
             inputText: prompt,
+            enableTrace: true, // Enable ReAct trace capture
           })
         );
 
@@ -149,7 +182,7 @@ Verify this hazard and return your reasoning with a verification score (0-100).`
         );
       }
 
-      // Store reasoning trace
+      // Store reasoning trace with ReAct steps
       await dynamodb.send(
         new PutCommand({
           TableName: TRACES_TABLE,
@@ -158,6 +191,7 @@ Verify this hazard and return your reasoning with a verification score (0-100).`
             hazardId: `${geohash}#${timestamp}`,
             reasoning: result.reasoning,
             verificationScore: result.verificationScore,
+            steps: result.steps || [], // Store ReAct steps
             createdAt: new Date().toISOString(),
             ttl: Math.floor(Date.now() / 1000) + 86400 * 7, // 7 days
           },

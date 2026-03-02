@@ -1,19 +1,20 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { AlertTriangle, CheckCircle, XCircle, Clock, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle, Clock, Loader2, ChevronDown, ChevronRight, Search } from 'lucide-react';
 
 const C = {
-  bg:      'var(--c-bg)',
-  panel:   'var(--c-panel)',
-  border:  'var(--c-border)',
-  text:    'var(--c-text)',
-  textSec: 'var(--c-text-2)',
-  textMut: 'var(--c-text-3)',
-  accent:  'var(--c-accent-2)',
-  green:   'var(--c-green)',
-  red:     'var(--c-red)',
-  yellow:  'var(--c-yellow)',
+  bg:       'var(--c-bg)',
+  panel:    'var(--c-panel)',
+  elevated: 'var(--c-elevated)',
+  border:   'var(--c-border)',
+  text:     'var(--c-text)',
+  textSec:  'var(--c-text-2)',
+  textMut:  'var(--c-text-3)',
+  accent:   'var(--c-accent-2)',
+  green:    'var(--c-green)',
+  red:      'var(--c-red)',
+  yellow:   'var(--c-yellow)',
 };
 
 // Simple Geohash Encoder (7 chars precision)
@@ -81,6 +82,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
   const [hazards, setHazards] = useState<Hazard[]>([]);
   const [expandedHazard, setExpandedHazard] = useState<string | null>(null);
   const [currentlyVerifying, setCurrentlyVerifying] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hazardId: string } | null>(null);
   const processingQueue = useRef<string[]>([]);
   const lastProcessedTime = useRef<number>(0);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -119,283 +121,83 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
     return () => window.removeEventListener('hazard-detected', handleHazardDetection as EventListener);
   }, []);
 
-  // Listen for telemetry submission events
-  useEffect(() => {
-    const handleTelemetrySubmit = (event: CustomEvent) => {
-      const { hazardIds } = event.detail;
-      
-      setHazards(prev => prev.map(h => 
-        hazardIds.includes(h.id) && h.status === 'pending'
-          ? { ...h, status: 'unverified' as HazardStatus }
-          : h
-      ));
-
-      // Add to processing queue
-      hazardIds.forEach((id: string) => {
-        if (!processingQueue.current.includes(id)) {
-          processingQueue.current.push(id);
-          
-          // Emit console event
-          window.dispatchEvent(new CustomEvent('vigia-trace', {
-            detail: { 
-              type: 'info', 
-              message: `📋 Hazard queued for verification: ${id.split('#')[0]}` 
-            }
-          }));
-        }
-      });
-
-      // Process queue
-      processNextHazard();
-    };
-
-    window.addEventListener('telemetry-submitted', handleTelemetrySubmit as EventListener);
-    return () => window.removeEventListener('telemetry-submitted', handleTelemetrySubmit as EventListener);
-  }, []);
-
-  // Process next hazard in queue if cooldown allows
-  const processNextHazard = () => {
-    if (currentlyVerifying || processingQueue.current.length === 0) return;
-    
-    const now = Date.now();
-    const timeSinceLastProcess = now - lastProcessedTime.current;
-    const cooldownMs = 35000; // 35 seconds
-    
-    if (timeSinceLastProcess < cooldownMs && lastProcessedTime.current > 0) {
-      const waitTime = Math.ceil((cooldownMs - timeSinceLastProcess) / 1000);
-      window.dispatchEvent(new CustomEvent('vigia-trace', {
-        detail: { 
-          type: 'info', 
-          message: `⏳ Cooldown active: waiting ${waitTime}s before next verification` 
-        }
-      }));
-      
-      // Schedule next check
-      setTimeout(processNextHazard, cooldownMs - timeSinceLastProcess);
-      return;
-    }
-    
-    // Process next hazard
-    const nextHazardId = processingQueue.current.shift();
-    if (nextHazardId) {
-      setCurrentlyVerifying(nextHazardId);
-      lastProcessedTime.current = now;
-      pollAgentTrace(nextHazardId);
-    }
-  };
-
-  const pollAgentTrace = async (hazardId: string) => {
-    // Check if we should use simulation mode (when backend isn't available)
-    const useSimulation = process.env.NEXT_PUBLIC_SIMULATE_AGENT === 'true'; // Backend is now operational
-    
-    if (useSimulation) {
-      // Simulate agent verification with realistic timing
-      console.log('[HazardVerificationPanel] Using simulation mode for:', hazardId);
-      
-      // Capture hazard confidence before async operations (avoid stale closure)
-      const currentHazard = hazards.find(h => h.id === hazardId);
-      const hazardConfidence = currentHazard?.confidence ?? 0.5;
-      
-      // Mark as verifying
-      setHazards(prev => prev.map(h => 
-        h.id === hazardId ? { ...h, status: 'verifying' as HazardStatus } : h
-      ));
-      
-      // Simulate agent thinking time (2-4 seconds)
-      const thinkTime = 2000 + Math.random() * 2000;
-      await new Promise(resolve => setTimeout(resolve, thinkTime));
-      
-      // Simulate verification result (80% verified, 20% rejected based on confidence)
-      const verificationScore = hazardConfidence >= 0.5 
-        ? Math.floor(70 + Math.random() * 25) // 70-95 for high confidence
-        : Math.floor(40 + Math.random() * 30); // 40-70 for low confidence
-      
-      const newStatus: HazardStatus = verificationScore >= 70 ? 'verified' : 'rejected';
-      const reasoning = newStatus === 'verified' 
-        ? `[Simulated] Hazard analysis complete. Visual features match pothole characteristics with ${verificationScore}% confidence. Road surface damage detected with clear boundary definition.`
-        : `[Simulated] Hazard analysis inconclusive. Verification score ${verificationScore}% below threshold. May require additional telemetry data.`;
-      
-      setHazards(prev => prev.map(h => 
-        h.id === hazardId 
-          ? { ...h, status: newStatus, traceId: `sim-${Date.now()}`, reasoning, verificationScore }
-          : h
-      ));
-
-      // Emit trace event for console viewer
-      window.dispatchEvent(new CustomEvent('vigia-trace', {
-        detail: { 
-          type: 'verification', 
-          message: `[SIM] Hazard ${hazardId.substring(0, 7)}... ${newStatus} (score: ${verificationScore})` 
-        }
-      }));
-
-      // Emit agent trace update for ReasoningTraceViewer
-      window.dispatchEvent(new CustomEvent('agent-trace-update', {
-        detail: { 
-          hazardId,
-          reasoning,
-          verificationScore
-        }
-      }));
-
-      // Remove verified/rejected hazards after 5 seconds
-      setTimeout(() => {
-        setHazards(prev => prev.filter(h => h.id !== hazardId));
-      }, 5000);
-      
-      return;
-    }
-    
-    // Real API polling mode
-    const maxAttempts = 30; // Poll for up to 60 seconds (2s intervals)
-    let attempts = 0;
-    
-    // Mark as verifying and scroll to it
-    setHazards(prev => prev.map(h => 
-      h.id === hazardId ? { ...h, status: 'verifying' as HazardStatus } : h
-    ));
-    
-    // Auto-expand and scroll to current hazard
-    setExpandedHazard(hazardId);
-    setTimeout(() => {
-      const element = document.getElementById(`hazard-${hazardId}`);
-      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
-    
-    // Emit agent thinking event
-    window.dispatchEvent(new CustomEvent('vigia-trace', {
-      detail: { 
-        type: 'info', 
-        message: `🤖 Agent analyzing hazard: ${hazardId.split('#')[0]}` 
-      }
-    }));
-
-    const poll = async () => {
-      attempts++;
-      
-      if (attempts === 1) {
-        window.dispatchEvent(new CustomEvent('vigia-trace', {
-          detail: { type: 'info', message: `🔍 Querying database for similar hazards...` }
-        }));
-      } else if (attempts === 5) {
-        window.dispatchEvent(new CustomEvent('vigia-trace', {
-          detail: { type: 'info', message: `⚙️ Agent calculating verification score...` }
-        }));
-      }
-      
-      try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
-        // URL-encode the hazardId (especially the # character)
-        const encodedHazardId = encodeURIComponent(hazardId);
-        const response = await fetch(`${apiUrl}/traces/${encodedHazardId}`);
-        
-        if (!response.ok) {
-          if (response.status === 404) {
-            // Trace not ready yet, retry
-            if (attempts < maxAttempts) {
-              attempts++;
-              setTimeout(poll, 2000); // Poll every 2 seconds for faster feedback
-            } else {
-              // Timeout - mark as unverified
-              console.warn(`[HazardVerificationPanel] Trace not found after max attempts: ${hazardId}`);
-              setHazards(prev => prev.map(h => 
-                h.id === hazardId ? { ...h, status: 'unverified' as HazardStatus } : h
-              ));
-            }
-          } else {
-            // Other error (500, etc) - retry
-            console.warn(`[HazardVerificationPanel] API error ${response.status} for ${hazardId}, retrying...`);
-            if (attempts < maxAttempts) {
-              attempts++;
-              setTimeout(poll, 2000);
-            } else {
-              // Max retries on error - mark as unverified
-              console.error(`[HazardVerificationPanel] API error after max attempts for ${hazardId}`);
-              setHazards(prev => prev.map(h => 
-                h.id === hazardId ? { ...h, status: 'unverified' as HazardStatus } : h
-              ));
-            }
-          }
-          return;
-        }
-
-        const data = await response.json();
-        
-        if (data.trace) {
-          const { traceId, reasoning, verificationScore } = data.trace;
-          const newStatus: HazardStatus = verificationScore >= 70 ? 'verified' : 'rejected';
-          
-          // Emit decision message
-          window.dispatchEvent(new CustomEvent('vigia-trace', {
-            detail: { 
-              type: newStatus === 'verified' ? 'success' : 'warning', 
-              message: `✅ Agent decision: ${newStatus.toUpperCase()} (score: ${verificationScore})` 
-            }
-          }));
-          
-          setHazards(prev => prev.map(h => 
-            h.id === hazardId 
-              ? { ...h, status: newStatus, traceId, reasoning, verificationScore }
-              : h
-          ));
-
-          // Emit trace event for console viewer
-          window.dispatchEvent(new CustomEvent('vigia-trace', {
-            detail: { 
-              type: 'verification', 
-              message: `Hazard ${hazardId} ${newStatus} (score: ${verificationScore})` 
-            }
-          }));
-
-          // Emit agent trace update for ReasoningTraceViewer
-          window.dispatchEvent(new CustomEvent('agent-trace-update', {
-            detail: { 
-              hazardId,
-              reasoning,
-              verificationScore
-            }
-          }));
-
-          // Remove verified/rejected hazards after 5 seconds
-          setTimeout(() => {
-            setHazards(prev => prev.filter(h => h.id !== hazardId));
-          }, 5000);
-          
-          // Mark as no longer processing and process next in queue
-          setCurrentlyVerifying(null);
-          setTimeout(processNextHazard, 100);
-        } else if (attempts < maxAttempts) {
-          attempts++;
-          setTimeout(poll, 2000);
-        } else {
-          // Max attempts reached with valid response but no trace - mark as unverified
-          console.warn('[HazardVerificationPanel] No trace found after max attempts:', hazardId);
-          setHazards(prev => prev.map(h => 
-            h.id === hazardId ? { ...h, status: 'unverified' as HazardStatus } : h
-          ));
-        }
-      } catch (error) {
-        // Network error or fetch failed - retry
-        if (attempts < maxAttempts) {
-          attempts++;
-          setTimeout(poll, 2000);
-        } else {
-          console.error('[HazardVerificationPanel] Failed to fetch agent trace after max attempts:', hazardId);
-          // Mark as unverified on network failure
-          setHazards(prev => prev.map(h => 
-            h.id === hazardId ? { ...h, status: 'unverified' as HazardStatus } : h
-          ));
-        }
-      }
-    };
+  // Manual verification handler
+  const handleVerifyHazard = async (hazardId: string) => {
+    const currentHazard = hazards.find(h => h.id === hazardId);
+    if (!currentHazard || currentHazard.status !== 'pending') return;
 
     // Mark as verifying
     setHazards(prev => prev.map(h => 
       h.id === hazardId ? { ...h, status: 'verifying' as HazardStatus } : h
     ));
 
-    poll();
+    // Emit verification start event
+    window.dispatchEvent(new CustomEvent('verification-start', {
+      detail: { hazardId }
+    }));
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
+      
+      const response = await fetch(`${apiUrl}/verify-hazard-sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hazardId,
+          hazardType: currentHazard.type,
+          lat: currentHazard.lat,
+          lon: currentHazard.lon,
+          confidence: currentHazard.confidence,
+          timestamp: currentHazard.timestamp,
+          geohash: hazardId.split('#')[0],
+        }),
+      });
+
+      if (!response.ok) throw new Error(`Verification failed: ${response.status}`);
+
+      const result = await response.json();
+      const { traceId, steps, verificationScore, reasoning } = result;
+
+      console.log('[HazardVerificationPanel] Received steps:', steps);
+
+      // Emit steps one by one with delays to simulate streaming
+      for (let i = 0; i < steps.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, i === 0 ? 0 : 800)); // 800ms between steps
+        window.dispatchEvent(new CustomEvent('verification-step', { 
+          detail: { step: steps[i] } 
+        }));
+      }
+
+      // Wait a bit then emit complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      window.dispatchEvent(new CustomEvent('verification-complete', {
+        detail: { traceId, steps, verificationScore }
+      }));
+
+      const newStatus: HazardStatus = verificationScore >= 70 ? 'verified' : 'rejected';
+      setHazards(prev => prev.map(h => 
+        h.id === hazardId ? { ...h, status: newStatus, traceId, reasoning, verificationScore } : h
+      ));
+
+      // Don't auto-remove - let user see the results
+
+    } catch (error) {
+      console.error('[HazardVerificationPanel] Verification error:', error);
+      setHazards(prev => prev.map(h => 
+        h.id === hazardId ? { ...h, status: 'rejected' as HazardStatus, reasoning: 'Verification failed' } : h
+      ));
+      // Don't auto-remove on error either
+    }
   };
+
+  // Remove auto-queue logic - verification is now manual only
+
+  // Close context menu on click outside
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
 
   const getStatusConfig = (status: HazardStatus) => {
     switch (status) {
@@ -503,6 +305,12 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                   {/* Hazard Header */}
                   <button
                     onClick={() => setExpandedHazard(isExpanded ? null : hazard.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      if (hazard.status === 'pending') {
+                        setContextMenu({ x: e.clientX, y: e.clientY, hazardId: hazard.id });
+                      }
+                    }}
                     style={{
                       width: '100%',
                       display: 'flex',
@@ -718,6 +526,74 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
           </span>
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            left: contextMenu.x,
+            top: contextMenu.y,
+            background: 'var(--c-elevated)',
+            border: '1px solid var(--c-border-md)',
+            borderRadius: 5,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.18), 0 0 0 1px var(--c-border)',
+            zIndex: 1000,
+            minWidth: 172,
+            padding: '3px 0',
+            overflow: 'hidden',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Menu header label */}
+          <div style={{
+            padding: '4px 10px 5px',
+            fontSize: '0.58rem',
+            color: 'var(--c-text-3)',
+            fontFamily: "'JetBrains Mono', monospace",
+            letterSpacing: '0.07em',
+            textTransform: 'uppercase',
+            borderBottom: '1px solid var(--c-border)',
+            marginBottom: 3,
+          }}>
+            Hazard Actions
+          </div>
+
+          <button
+            onClick={() => {
+              handleVerifyHazard(contextMenu.hazardId);
+              setContextMenu(null);
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 10px',
+              background: 'transparent',
+              border: 'none',
+              textAlign: 'left',
+              cursor: 'pointer',
+              fontSize: '0.7rem',
+              color: 'var(--c-text)',
+              fontFamily: "'IBM Plex Sans', sans-serif",
+              transition: 'background 0.1s',
+              borderLeft: '2px solid transparent',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--c-hover)';
+              e.currentTarget.style.borderLeftColor = 'var(--c-rose-2)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.borderLeftColor = 'transparent';
+            }}
+          >
+            <Search size={12} style={{ color: 'var(--c-rose-2)', flexShrink: 0 }} />
+            Verify Hazard
+          </button>
+        </div>
+      )}
     </div>
   );
 }

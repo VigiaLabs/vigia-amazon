@@ -31,8 +31,8 @@ const C = {
   text:     'var(--c-text)',
   textSec:  'var(--c-text-2)',
   textMut:  'var(--c-text-3)',
-  accent:   'var(--c-accent-2)',
-  accentBrt:'var(--c-accent-2)',
+  accent:   'var(--c-rose-2)',
+  accentBrt:'var(--c-rose-2)',
   green:    'var(--c-green)',
   red:      'var(--c-red)',
   yellow:   'var(--c-yellow)',
@@ -408,16 +408,16 @@ export function VideoUploader() {
       console.log('[VideoUploader] Scaled bbox:', { x1, y1, w, h });
 
       // Glowing box for dark theme
-      ctx.strokeStyle = '#3574F0';
+      ctx.strokeStyle = '#9A72A2';
       ctx.lineWidth   = 1.5;
-      ctx.shadowColor = 'rgba(53,116,240,0.5)';
+      ctx.shadowColor = 'rgba(154,114,162,0.5)';
       ctx.shadowBlur  = 6;
       ctx.strokeRect(x1, y1, w, h);
       ctx.shadowBlur  = 0;
 
       // Corner marks
       const cs = 8;
-      ctx.strokeStyle = '#3574F0';
+      ctx.strokeStyle = '#9A72A2';
       ctx.lineWidth   = 2;
       [
         [x1, y1, x1+cs, y1, x1, y1+cs],
@@ -435,7 +435,7 @@ export function VideoUploader() {
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = '#2B2D30';
       ctx.fillRect(x1, y1 - 16, tw + 8, 14);
-      ctx.fillStyle = '#3574F0';
+      ctx.fillStyle = '#9A72A2';
       ctx.fillText(label, x1 + 4, y1 - 5);
     }
   };
@@ -494,71 +494,8 @@ export function VideoUploader() {
 
   useEffect(() => { drawDetections(); }, [currentDetection]);
 
-  // Sequential send with cooldown delay — prevents duplicate blocking
-  useEffect(() => {
-    if (!isProcessing) return;
-    
-    // Send immediately if there's a hazard in queue
-    const sendNext = () => {
-      setTelemetryBatch(currentBatch => {
-        if (currentBatch.length > 0) {
-          const telemetry = currentBatch[0]; // Take first item
-          const geohash = encodeGeohash(telemetry.lat, telemetry.lon, 7);
-          const hazardId = `${geohash}#${telemetry.timestamp}`;
-          
-          console.log('[VideoUploader] Sending telemetry:', hazardId);
-          
-          // Send single telemetry
-          (async () => {
-            try {
-              const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/telemetry`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(telemetry),
-              });
-              
-              if (!response.ok) {
-                console.error('Failed to send telemetry:', await response.text());
-                window.dispatchEvent(new CustomEvent('vigia-trace', {
-                  detail: { type: 'error', message: `Telemetry submission failed: ${response.statusText}` }
-                }));
-              } else {
-                setTotalSent(p => p + 1);
-                console.log('[VideoUploader] Telemetry sent:', telemetry.hazardType, 'confidence:', telemetry.confidence);
-                window.dispatchEvent(new CustomEvent('vigia-trace', {
-                  detail: { 
-                    type: 'success', 
-                    message: `Telemetry sent: ${telemetry.hazardType} (confidence: ${(telemetry.confidence * 100).toFixed(1)}%)`
-                  }
-                }));
-                
-                // Emit telemetry submission event
-                window.dispatchEvent(new CustomEvent('telemetry-submitted', {
-                  detail: { hazardIds: [hazardId] }
-                }));
-              }
-            } catch (error) {
-              console.error('Network error:', error);
-              window.dispatchEvent(new CustomEvent('vigia-trace', {
-                detail: { type: 'error', message: `Network error: ${error}` }
-              }));
-            }
-          })();
-          
-          return currentBatch.slice(1); // Remove sent item
-        }
-        return currentBatch;
-      });
-    };
-    
-    // Send first one immediately
-    sendNext();
-    
-    // Then send every 35 seconds
-    const sendInterval = setInterval(sendNext, 35000);
-    
-    return () => clearInterval(sendInterval);
-  }, [isProcessing]);
+  // Remove auto-send - user will manually verify hazards
+  // Telemetry batch is kept for user to select and verify
 
   useEffect(() => {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
@@ -571,9 +508,9 @@ export function VideoUploader() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-            <Film size={14} style={{ color: C.accent }} />
+            <Film size={14} style={{ color: 'var(--c-rose-2)' }} />
             <span style={{ fontSize: '0.82rem', fontWeight: 500, color: C.text, fontFamily: FONT }}>
-              Detection Mode
+              Detection Node
             </span>
             {locationStatus === 'success' && (
               <span style={{ fontSize: '0.6rem', color: C.green, fontFamily: FONT }}>
@@ -862,19 +799,19 @@ export function VideoUploader() {
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '6px 14px', borderRadius: 3,
-                border: 'none',
-                background: (isProcessing || !videoReady) ? C.elevated : C.accent,
-                color: (isProcessing || !videoReady) ? C.textMut : '#fff',
+                background: (isProcessing || !videoReady) ? C.elevated : 'var(--c-rose-dim)',
+                color: (isProcessing || !videoReady) ? C.textMut : 'var(--c-rose-2)',
+                border: (isProcessing || !videoReady) ? '1px solid transparent' : '1px solid var(--c-rose-border)',
                 fontSize: '0.7rem', fontWeight: 500,
                 cursor: (isProcessing || !videoReady) ? 'not-allowed' : 'pointer',
                 fontFamily: FONT,
                 transition: 'all 0.1s',
               }}
               onMouseEnter={(e) => {
-                if (!isProcessing && videoReady) (e.currentTarget as HTMLElement).style.background = '#4A8AF4';
+                if (!isProcessing && videoReady) (e.currentTarget as HTMLElement).style.background = 'var(--c-rose-glow)';
               }}
               onMouseLeave={(e) => {
-                if (!isProcessing && videoReady) (e.currentTarget as HTMLElement).style.background = C.accent;
+                if (!isProcessing && videoReady) (e.currentTarget as HTMLElement).style.background = 'var(--c-rose-dim)';
               }}
             >
               <Play size={12} />
