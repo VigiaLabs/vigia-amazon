@@ -19,9 +19,13 @@ import { NewSessionView }       from './components/NewSessionView';
 import { DiffView }             from './components/DiffView';
 import { DetectionModeView }    from './components/DetectionModeView';
 import { NetworkMapView }       from './components/NetworkMapView';
+import { MaintenancePanel }     from './components/MaintenancePanelIntegrated';
+import { AgentChatPanel }       from './components/AgentChatPanel';
+import { NetworkHealthPanel }   from './components/NetworkHealthPanel';
+import { UrbanPlannerModal }    from './components/UrbanPlannerModal';
 
 type MainTab    = 'map' | 'sentinel' | string;
-type ConsoleTab = 'traces' | 'ledger' | 'console';
+type ConsoleTab = 'traces' | 'ledger' | 'console' | 'network';
 
 export default function Dashboard() {
   const { settings } = useSettings();
@@ -36,6 +40,7 @@ export default function Dashboard() {
   const [cmdOpen,            setCmdOpen]            = useState(false);
   const [selectedSession,    setSelectedSession]    = useState<any>(null);
   const [sidebarActivity,    setSidebarActivity]    = useState<'explorer' | 'detection' | 'network' | 'maintenance'>('explorer');
+  const [showUrbanPlanner,   setShowUrbanPlanner]   = useState(false);
   const [splitView,          setSplitView]          = useState<{ left: any; right: any } | null>(null);
   // Track which content tab is showing for crossfade key
   const [mainTabKey,         setMainTabKey]         = useState(0);
@@ -396,6 +401,7 @@ export default function Dashboard() {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minWidth: 0 }}>
 
           {/* ── Main Tab Bar ─────────────── */}
+          {sidebarActivity !== 'network' && sidebarActivity !== 'maintenance' && (
           <div style={{
             display: 'flex', alignItems: 'flex-end', height: 36, flexShrink: 0,
             background: 'var(--c-sidebar)', borderBottom: '1px solid var(--c-border)',
@@ -433,6 +439,7 @@ export default function Dashboard() {
             })}
             <div style={{ flex: 1 }} />
           </div>
+          )}
 
           {activeMainTab === 'map' && (
             <Breadcrumb path={
@@ -444,7 +451,9 @@ export default function Dashboard() {
 
           {/* ── Main Content — crossfade ─── */}
           <div key={mainTabKey} className="panel-fade" style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
-            {sidebarActivity === 'network' ? (
+            {sidebarActivity === 'maintenance' ? (
+              <MaintenancePanel />
+            ) : sidebarActivity === 'network' ? (
               <NetworkMapView />
             ) : !activeMainTab ? (
               <div style={{
@@ -533,7 +542,7 @@ export default function Dashboard() {
           </div>
 
           {/* ── Console ──────────────────── */}
-          <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, height: consoleHeight, borderTop: '1px solid var(--c-border)' }}>
+          {sidebarActivity !== 'network' && sidebarActivity !== 'maintenance' && <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, height: consoleHeight, borderTop: '1px solid var(--c-border)' }}>
 
             {/* Resize handle */}
             <div className="drag-handle-y" onMouseDown={onResizeDown} style={{
@@ -578,8 +587,15 @@ export default function Dashboard() {
               {activeConsoleTab === 'ledger'  && <LedgerTicker />}
               {activeConsoleTab === 'console' && <ConsoleViewer />}
             </div>
-          </div>
+          </div>}
         </div>
+
+        {sidebarActivity === 'explorer' && (
+          <AgentChatPanel
+            contextType="livemap"
+            context={{ sessionId: selectedSession?.sessionId, city: selectedSession?.location?.city }}
+          />
+        )}
 
         {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       </div>

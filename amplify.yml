@@ -6,7 +6,8 @@ applications:
         preBuild:
           commands:
             - nvm use 20
-            - npm ci
+            # Install all workspace deps from monorepo root so hoisted packages resolve
+            - cd ../.. && npm ci
         build:
           commands:
             - npm run build
@@ -16,5 +17,7 @@ applications:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
+          # Workspace root node_modules (hoisted deps including AWS SDK)
+          - ../../node_modules/**/*
+          # Next.js build cache
           - .next/cache/**/*

@@ -5,6 +5,7 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useSettings } from './SettingsContext';
 import { applyMapFilter } from '../lib/map-style';
+import { AgentChatPanel } from './AgentChatPanel';
 
 const C = {
   bg:      'var(--c-bg)',
@@ -37,16 +38,16 @@ const getOSMPaint = (theme: string): Record<string, number> =>
 
 // Demo data: Active nodes in India (simulating real VIGIA users)
 const DEMO_NODES = [
-  { id: 'node-1', lat: 28.6139, lon: 77.2090, city: 'New Delhi', sessions: 142, coverage: 45.2 },
-  { id: 'node-2', lat: 19.0760, lon: 72.8777, city: 'Mumbai', sessions: 238, coverage: 67.8 },
-  { id: 'node-3', lat: 13.0827, lon: 80.2707, city: 'Chennai', sessions: 156, coverage: 52.1 },
-  { id: 'node-4', lat: 22.5726, lon: 88.3639, city: 'Kolkata', sessions: 189, coverage: 58.4 },
-  { id: 'node-5', lat: 12.9716, lon: 77.5946, city: 'Bangalore', sessions: 312, coverage: 78.9 },
-  { id: 'node-6', lat: 17.3850, lon: 78.4867, city: 'Hyderabad', sessions: 201, coverage: 61.3 },
-  { id: 'node-7', lat: 23.0225, lon: 72.5714, city: 'Ahmedabad', sessions: 134, coverage: 43.7 },
-  { id: 'node-8', lat: 18.5204, lon: 73.8567, city: 'Pune', sessions: 167, coverage: 54.2 },
-  { id: 'node-9', lat: 26.9124, lon: 75.7873, city: 'Jaipur', sessions: 98, coverage: 38.6 },
-  { id: 'node-10', lat: 21.1458, lon: 79.0882, city: 'Nagpur', sessions: 87, coverage: 32.4 },
+  { id: 'node-1', lat: 28.6139, lon: 77.2090, city: 'New Delhi', sessions: 142, coverage: 45.2, geohash: 'ttv2yzr' },
+  { id: 'node-2', lat: 19.0760, lon: 72.8777, city: 'Mumbai', sessions: 238, coverage: 67.8, geohash: 'te7myzr' },
+  { id: 'node-3', lat: 13.0827, lon: 80.2707, city: 'Chennai', sessions: 156, coverage: 52.1, geohash: 'tdm8yzr' },
+  { id: 'node-4', lat: 22.5726, lon: 88.3639, city: 'Kolkata', sessions: 189, coverage: 58.4, geohash: 'tuvnyzr' },
+  { id: 'node-5', lat: 12.9716, lon: 77.5946, city: 'Bangalore', sessions: 312, coverage: 78.9, geohash: 'tdm2yzr' },
+  { id: 'node-6', lat: 17.3850, lon: 78.4867, city: 'Hyderabad', sessions: 201, coverage: 61.3, geohash: 'tep4yzr' },
+  { id: 'node-7', lat: 23.0225, lon: 72.5714, city: 'Ahmedabad', sessions: 134, coverage: 43.7, geohash: 'ts7kyzr' },
+  { id: 'node-8', lat: 18.5204, lon: 73.8567, city: 'Pune', sessions: 167, coverage: 54.2, geohash: 'te9myzr' },
+  { id: 'node-9', lat: 26.9124, lon: 75.7873, city: 'Jaipur', sessions: 98, coverage: 38.6, geohash: 'tsv8yzr' },
+  { id: 'node-10', lat: 21.1458, lon: 79.0882, city: 'Nagpur', sessions: 87, coverage: 32.4, geohash: 'tep9yzr' },
 ];
 
 // Seeded random for consistent road generation
@@ -368,7 +369,8 @@ export function NetworkMapView() {
   }, [settings.mapStyle, mapReady]);
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: C.bg }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: C.bg, overflow: 'hidden' }}>
       {/* Header */}
       <div style={{
         padding: '0 16px',
@@ -470,9 +472,63 @@ export function NetworkMapView() {
             <div style={{ color: C.textSec, marginBottom: 3 }}>
               Sessions: <span style={{ color: C.accent, fontWeight: 600 }}>{selectedNode.sessions}</span>
             </div>
-            <div style={{ color: C.textSec }}>
+            <div style={{ color: C.textSec, marginBottom: 8 }}>
               Coverage: <span style={{ color: C.accent, fontWeight: 600 }}>{selectedNode.coverage}%</span>
             </div>
+            <div style={{ height: 1, background: C.border, marginBottom: 8 }} />
+            <div style={{ fontSize: '0.7rem', color: C.textMut, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Ask Agent
+            </div>
+            <button
+              onClick={() => {
+                const context = `Analyze network health for geohash ${selectedNode.geohash} in ${selectedNode.city}. Use analyze_node_connectivity to get active node count, geographic spread, and health score for this area.`;
+                (window as any).__networkAgentContext = context;
+                (window as any).__networkAgentTrigger?.();
+              }}
+              style={{
+                width: '100%',
+                padding: '6px 10px',
+                background: C.accent,
+                border: `1px solid ${C.border}`,
+                borderRadius: 3,
+                color: C.text,
+                fontSize: '0.7rem',
+                cursor: 'pointer',
+                marginBottom: 4,
+                fontFamily: FONT,
+              }}
+            >
+              Analyze This Node
+            </button>
+            <button
+              onClick={() => {
+                // Calculate bounding box (~10km around node)
+                const latOffset = 0.05; // ~5km
+                const lonOffset = 0.05;
+                const bbox = {
+                  north: selectedNode.lat + latOffset,
+                  south: selectedNode.lat - latOffset,
+                  east: selectedNode.lon + lonOffset,
+                  west: selectedNode.lon - lonOffset,
+                };
+                const context = `Identify coverage gaps near ${selectedNode.city}. Use identify_coverage_gaps with bounding box: north=${bbox.north.toFixed(4)}, south=${bbox.south.toFixed(4)}, east=${bbox.east.toFixed(4)}, west=${bbox.west.toFixed(4)}, and minReportsThreshold=5.`;
+                (window as any).__networkAgentContext = context;
+                (window as any).__networkAgentTrigger?.();
+              }}
+              style={{
+                width: '100%',
+                padding: '6px 10px',
+                background: 'transparent',
+                border: `1px solid ${C.border}`,
+                borderRadius: 3,
+                color: C.text,
+                fontSize: '0.7rem',
+                cursor: 'pointer',
+                fontFamily: FONT,
+              }}
+            >
+              Find Coverage Gaps
+            </button>
           </div>
         )}
 
@@ -499,6 +555,11 @@ export function NetworkMapView() {
           </div>
         </div>
       </div>
+      </div>
+      <AgentChatPanel
+        contextType="network"
+        context={{ nodeCount: stats.totalNodes, totalSessions: stats.totalSessions, avgCoverage: stats.avgCoverage }}
+      />
     </div>
   );
 }

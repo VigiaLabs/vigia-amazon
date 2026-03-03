@@ -6,10 +6,9 @@ import {
   Settings, Search, AlertTriangle,
   Navigation, ChevronRight, ChevronDown,
   Folder, FolderOpen, FileText, Video,
-  Clock, MapPin, Activity, Wrench,
+  Clock, MapPin, Activity, Wrench, Map,
 } from 'lucide-react';
 import { VFSManager } from '../lib/vfs-manager';
-import { MaintenancePanel } from './MaintenancePanelIntegrated';
 import { useMapFileStore } from '../../stores/mapFileStore';
 import { useSettings } from './SettingsContext';
 import { applyMapFilter } from '../lib/map-style';
@@ -1410,19 +1409,6 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Maintenance Panel ──────────────────────────────────────────────── */}
-      {activeActivity === 'maintenance' && (
-        <div style={{
-          width,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          background: C.bg,
-        }}>
-          <MaintenancePanel />
         </div>
       )}
 

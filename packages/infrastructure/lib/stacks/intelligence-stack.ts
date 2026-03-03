@@ -6,16 +6,23 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as path from 'path';
+import { BedrockAgentConfig } from '../constructs/bedrock-agent';
 
 export interface IntelligenceStackProps {
   hazardsTable?: dynamodb.Table;
   ledgerTable: dynamodb.Table;
+  maintenanceQueueTable?: dynamodb.Table;
+  economicMetricsTable?: dynamodb.Table;
 }
 
 export class IntelligenceStack extends Construct {
   public readonly cooldownTable: dynamodb.Table;
   public readonly tracesTable: dynamodb.Table;
   public readonly bedrockRouterFn: lambda.Function;
+  public readonly networkIntelligenceFn?: lambda.Function;
+  public readonly maintenanceLogisticsFn?: lambda.Function;
+  public readonly urbanPlannerFn?: lambda.Function;
+  public readonly bedrockAgentConfig?: BedrockAgentConfig;
   public readonly verifyHazardSyncFn?: lambdaNodejs.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: IntelligenceStackProps) {
@@ -145,6 +152,88 @@ export class IntelligenceStack extends Construct {
           resources: ['*'],
         })
       );
+
+      // ═══════════════════════════════════════════════════════════
+      // NEW: Agent Upgrade - 3 Additional Action Group Lambdas
+      // ═══════════════════════════════════════════════════════════
+
+      // Network Intelligence Lambda
+      this.networkIntelligenceFn = new lambda.Function(this, 'NetworkIntelligenceFunction', {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: 'network-intelligence.lambda_handler',
+        code: lambda.Code.fromAsset(path.join(__dirname, '../../../backend/src/actions')),
+        timeout: cdk.Duration.seconds(30),
+        environment: {
+          HAZARDS_TABLE_NAME: props.hazardsTable.tableName,
+        },
+      });
+
+      props.hazardsTable.grantReadData(this.networkIntelligenceFn);
+
+      // Maintenance Logistics Lambda
+      this.maintenanceLogisticsFn = new lambda.Function(this, 'MaintenanceLogisticsFunction', {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: 'maintenance-logistics.lambda_handler',
+        code: lambda.Code.fromAsset(path.join(__dirname, '../../../backend/src/actions')),
+        timeout: cdk.Duration.seconds(30),
+        environment: {
+          HAZARDS_TABLE_NAME: props.hazardsTable.tableName,
+          MAINTENANCE_QUEUE_TABLE_NAME: props.maintenanceQueueTable?.tableName || '',
+        },
+      });
+
+      props.hazardsTable.grantReadData(this.maintenanceLogisticsFn);
+      if (props.maintenanceQueueTable) {
+        props.maintenanceQueueTable.grantReadData(this.maintenanceLogisticsFn);
+      }
+
+      // Urban Planner Lambda
+      this.urbanPlannerFn = new lambda.Function(this, 'UrbanPlannerFunction', {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: 'urban-planner.lambda_handler',
+        code: lambda.Code.fromAsset(path.join(__dirname, '../../../backend/src/actions')),
+        timeout: cdk.Duration.seconds(30),
+        environment: {
+          HAZARDS_TABLE_NAME: props.hazardsTable.tableName,
+          ECONOMIC_METRICS_TABLE_NAME: props.economicMetricsTable?.tableName || '',
+        },
+      });
+
+      props.hazardsTable.grantReadData(this.urbanPlannerFn);
+      if (props.economicMetricsTable) {
+        props.economicMetricsTable.grantReadData(this.urbanPlannerFn);
+      }
+
+      // Output Lambda ARNs
+      new cdk.CfnOutput(this, 'NetworkIntelligenceFunctionArn', {
+        value: this.networkIntelligenceFn.functionArn,
+        description: 'ARN of Network Intelligence Lambda',
+      });
+
+      new cdk.CfnOutput(this, 'MaintenanceLogisticsFunctionArn', {
+        value: this.maintenanceLogisticsFn.functionArn,
+        description: 'ARN of Maintenance Logistics Lambda',
+      });
+
+      new cdk.CfnOutput(this, 'UrbanPlannerFunctionArn', {
+        value: this.urbanPlannerFn.functionArn,
+        description: 'ARN of Urban Planner Lambda',
+      });
+
+      // ═══════════════════════════════════════════════════════════
+      // Bedrock Agent Configuration Output
+      // ═══════════════════════════════════════════════════════════
+
+      this.bedrockAgentConfig = new BedrockAgentConfig(this, 'VigiaAgentConfig', {
+        agentId: 'TAWWC3SQ0L',
+        agentAliasId: 'TSTALIASID',
+        actionGroupLambdas: {
+          hazardVerification: this.bedrockRouterFn,
+          networkIntelligence: this.networkIntelligenceFn,
+          maintenanceLogistics: this.maintenanceLogisticsFn,
+          urbanPlanner: this.urbanPlannerFn,
+        },
+      });
     }
   }
 }

@@ -30,10 +30,17 @@ export class VigiaStack extends cdk.Stack {
       tracesTable: intelligenceStack.tracesTable,
     });
 
-    // Now create intelligence components that need hazards table
+    // Innovation Features Stack (create before IntelligenceWithHazards to pass tables)
+    const innovationStack = new InnovationStack(this, 'Innovation', {
+      hazardsTable: ingestionStack.hazardsTable,
+    });
+
+    // Now create intelligence components that need hazards table + innovation tables
     const intelligenceWithHazardsStack = new IntelligenceStack(this, 'IntelligenceWithHazards', {
       hazardsTable: ingestionStack.hazardsTable,
       ledgerTable: trustStack.ledgerTable,
+      maintenanceQueueTable: innovationStack.maintenanceQueueTable,
+      economicMetricsTable: innovationStack.economicMetricsTable,
     });
 
     // Add verify-hazard-sync endpoint to ingestion API
@@ -60,11 +67,6 @@ export class VigiaStack extends cdk.Stack {
 
     // Zone 5: Visualization Layer (Amazon Location Service)
     new VisualizationStack(this, 'Visualization', {
-      hazardsTable: ingestionStack.hazardsTable,
-    });
-
-    // Innovation Features Stack
-    const innovationStack = new InnovationStack(this, 'Innovation', {
       hazardsTable: ingestionStack.hazardsTable,
     });
 

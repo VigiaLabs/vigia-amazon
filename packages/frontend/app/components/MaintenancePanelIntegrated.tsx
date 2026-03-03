@@ -2,6 +2,7 @@
 
 import { useEconomicStore } from '@/stores/economicStore';
 import { useState } from 'react';
+import { AgentChatPanel } from './AgentChatPanel';
 
 export function MaintenancePanel() {
   const { maintenanceQueue, isLoading, submitMaintenanceReport } = useEconomicStore();
@@ -41,7 +42,8 @@ export function MaintenancePanel() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.bg }}>
+    <div style={{ display: 'flex', flexDirection: 'row', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: C.bg, overflow: 'hidden' }}>
       {/* Header */}
       <div style={{
         padding: '0 12px',
@@ -174,6 +176,11 @@ export function MaintenancePanel() {
       <div ref={(el) => {
         if (el) (window as any).__setMaintenanceHazard = setSelectedHazard;
       }} style={{ display: 'none' }} />
+      </div>
+      <AgentChatPanel
+        contextType="maintenance"
+        context={{ queueLength: maintenanceQueue.length }}
+      />
     </div>
   );
 }
