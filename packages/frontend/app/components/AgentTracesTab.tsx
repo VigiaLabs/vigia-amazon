@@ -12,7 +12,7 @@ const SANS = "'IBM Plex Sans', sans-serif";
 function ThoughtLine({ text }: { text: string }) {
   return (
     <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-      <span style={{ fontSize: '0.7rem', marginTop: 1, flexShrink: 0, opacity: 0.5 }}>💭</span>
+      <span style={{ fontSize: '0.7rem', marginTop: 1, flexShrink: 0, opacity: 0.4, color: 'var(--c-text-3)', fontFamily: MONO }}>○</span>
       <span style={{ fontSize: '0.68rem', fontFamily: MONO, color: 'var(--c-text-3)', fontStyle: 'italic', lineHeight: 1.5 }}>
         {text}
       </span>
@@ -24,7 +24,7 @@ function ActionLine({ action, input }: { action: string; input: Record<string, u
   const entries = Object.entries(input);
   return (
     <div style={{ display: 'flex', gap: 8, marginBottom: 6, paddingLeft: 12 }}>
-      <span style={{ fontSize: '0.7rem', marginTop: 1, flexShrink: 0 }}>⚡</span>
+      <span style={{ fontSize: '0.7rem', marginTop: 1, flexShrink: 0, color: 'var(--c-accent-2)', fontFamily: MONO }}>→</span>
       <div style={{ fontSize: '0.68rem', fontFamily: MONO, lineHeight: 1.5 }}>
         <span style={{ color: 'var(--c-accent-2)', fontWeight: 600 }}>{action}</span>
         {entries.length > 0 && (
@@ -355,7 +355,6 @@ export function AgentTracesTab() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               height: '50%', flexDirection: 'column', gap: 10,
             }}>
-              <div style={{ fontSize: '1.6rem', opacity: 0.12 }}>🤖</div>
               <div style={{ fontSize: '0.7rem', color: 'var(--c-text-3)', fontFamily: MONO }}>
                 {filter ? 'No traces match this filter' : 'Waiting for verification requests…'}
               </div>

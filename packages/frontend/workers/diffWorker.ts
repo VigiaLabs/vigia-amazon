@@ -48,8 +48,8 @@ self.onmessage = (e: MessageEvent<DiffWorkerMessage>) => {
   }
 
   const result: DiffResult = {
-    fileA: { sessionId: fileA.sessionId, timestamp: fileA.timestamp },
-    fileB: { sessionId: fileB.sessionId, timestamp: fileB.timestamp },
+    fileA: { sessionId: fileA.sessionId, timestamp: fileA.temporal.createdAt },
+    fileB: { sessionId: fileB.sessionId, timestamp: fileB.temporal.createdAt },
     changes: {
       new: newHazards,
       fixed: fixedHazards,

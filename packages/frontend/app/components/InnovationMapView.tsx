@@ -5,8 +5,11 @@ import maplibregl from 'maplibre-gl';
 import { DiffLayer } from './DiffLayer';
 import { BranchLayer } from './BranchLayer';
 import { useMapFileStore } from '@/stores/mapFileStore';
+import { useSettings } from './SettingsContext';
+import { applyMapFilter, getMapStyleUrl } from '../lib/map-style';
 
 export function InnovationMapView() {
+  const { settings } = useSettings();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const { activeFileId, files } = useMapFileStore();
@@ -16,37 +19,27 @@ export function InnovationMapView() {
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          'osm-tiles': {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors',
-          },
-        },
-        layers: [
-          {
-            id: 'osm-tiles',
-            type: 'raster',
-            source: 'osm-tiles',
-            minzoom: 0,
-            maxzoom: 19,
-          },
-        ],
-      },
+      style: getMapStyleUrl(settings.mapStyle) as any,
       center: [-122.4194, 37.7749], // San Francisco
       zoom: 12,
     });
 
     mapRef.current = map;
 
+    map.on('load', () => {
+      applyMapFilter(mapContainerRef.current, settings.mapStyle);
+    });
+
     return () => {
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
+  // Reapply CSS filter whenever map style changes
+  useEffect(() => {
+    applyMapFilter(mapContainerRef.current, settings.mapStyle);
+  }, [settings.mapStyle]);
 
   // Update map when active file changes
   useEffect(() => {

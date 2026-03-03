@@ -105,7 +105,7 @@ export function BranchLayer({ map }: { map: maplibregl.Map | null }) {
     <>
       <div className="absolute top-4 left-4 bg-white border border-[#CBD5E1] rounded p-3 shadow-lg z-10">
         <div className="text-xs font-medium mb-2 flex items-center gap-2">
-          <span>🌿</span>
+          <span style={{ fontSize: '0.65rem', color: '#22c55e', fontFamily: 'monospace' }}>⎇</span>
           <span>BRANCH: {activeBranch.branchName}</span>
         </div>
         <div className="text-xs text-gray-600 mb-2">

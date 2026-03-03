@@ -116,10 +116,16 @@ npm run test:pbt
 
 ## 📚 Documentation
 
-- [requirements.md](./requirements.md) - EARS-notated system requirements
-- [design.md](./design.md) - Production-grade architecture document
-- [tasks.md](./tasks.md) - Granular implementation task plan
-- [design_context.txt](./design_context.txt) - Original vision document
+**Consolidated Documentation** (March 3, 2026):
+- [docs/1-requirements.md](./docs/1-requirements.md) - System Requirements Specification
+- [docs/2-system-design.md](./docs/2-system-design.md) - Architecture & Design Document
+- [docs/3-component-specs.md](./docs/3-component-specs.md) - Component Specifications
+- [docs/4-master-task-list.md](./docs/4-master-task-list.md) - Master Task List (197/197 complete)
+
+**Legacy Documentation** (superseded by consolidated docs):
+- [requirements.md](./requirements.md), [design.md](./design.md), [tasks.md](./tasks.md) - Original documents
+- [COMPLETION_SUMMARY.md](./COMPLETION_SUMMARY.md) - Innovation features completion report
+- [TEST_REPORT.md](./TEST_REPORT.md) - Test results and coverage
 
 ## 🏆 Competition Timeline
 

@@ -16,8 +16,69 @@ export const HazardSchema = z.object({
 
 export type Hazard = z.infer<typeof HazardSchema>;
 
-// MapFile schema (real forensic data)
+// Coverage schema
+export const CoverageSchema = z.object({
+  type: z.enum(['city', 'region', 'neighborhood', 'custom']),
+  name: z.string(),
+  boundingBox: z.object({
+    north: z.number(),
+    south: z.number(),
+    east: z.number(),
+    west: z.number(),
+  }),
+  centerPoint: z.object({
+    lat: z.number(),
+    lon: z.number(),
+    geohash: z.string(),
+  }),
+  geohashPrecision: z.number().int().min(5).max(9),
+  geohashTiles: z.array(z.string()),
+  areaKm2: z.number(),
+});
+
+// Temporal schema
+export const TemporalSchema = z.object({
+  captureStart: z.number(),
+  captureEnd: z.number(),
+  createdAt: z.number(),
+  finalizedAt: z.number().optional(),
+  duration: z.number(),
+  status: z.enum(['collecting', 'finalized', 'archived']),
+});
+
+// Location schema
+export const LocationSchema = z.object({
+  continent: z.string(),
+  country: z.string(),
+  state: z.string(),
+  region: z.string(),
+  city: z.string(),
+  neighborhood: z.string().optional(),
+});
+
+// MapFile schema (enhanced)
 export const MapFileSchema = z.object({
+  version: z.literal('1.0'),
+  sessionId: z.string(),
+  displayName: z.string(),
+  coverage: CoverageSchema,
+  temporal: TemporalSchema,
+  location: LocationSchema,
+  hazards: z.array(HazardSchema),
+  metadata: z.object({
+    totalHazards: z.number(),
+    hazardsByType: z.record(z.string(), z.number()),
+    severityDistribution: z.record(z.string(), z.number()),
+    contributors: z.array(z.string()),
+    dataSource: z.enum(['manual', 'video', 'import']),
+    tags: z.array(z.string()),
+  }),
+});
+
+export type MapFile = z.infer<typeof MapFileSchema>;
+
+// Legacy MapFile schema (for migration)
+export const LegacyMapFileSchema = z.object({
   version: z.literal('1.0'),
   sessionId: z.string(),
   timestamp: z.number(),
@@ -29,7 +90,7 @@ export const MapFileSchema = z.object({
   }),
 });
 
-export type MapFile = z.infer<typeof MapFileSchema>;
+export type LegacyMapFile = z.infer<typeof LegacyMapFileSchema>;
 
 // ScenarioBranch schema (simulation data)
 export const ScenarioBranchSchema = MapFileSchema.extend({

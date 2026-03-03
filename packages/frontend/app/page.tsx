@@ -16,6 +16,7 @@ import { CommandPalette }       from './components/CommandPalette';
 import { ToastContainer, toast } from './components/ToastSystem';
 import { useSettings }          from './components/SettingsContext';
 import { NewSessionView }       from './components/NewSessionView';
+import { DiffView }             from './components/DiffView';
 import { DetectionModeView }    from './components/DetectionModeView';
 import { NetworkMapView }       from './components/NetworkMapView';
 
@@ -25,8 +26,8 @@ type ConsoleTab = 'traces' | 'ledger' | 'console';
 export default function Dashboard() {
   const { settings } = useSettings();
   const [activeMainTab,      setActiveMainTab]      = useState<MainTab | null>(null);
-  const [explorerTabs,       setExplorerTabs]       = useState<Array<{id: string; label: string; session?: any; isNewSession?: boolean}>>([]);
-  const [detectionTabs,      setDetectionTabs]      = useState<Array<{id: string; label: string; session?: any; isNewSession?: boolean}>>([]);
+  const [explorerTabs,       setExplorerTabs]       = useState<Array<{id: string; label: string; session?: any; isNewSession?: boolean; isDirty?: boolean; diffMap?: any}>>([]);
+  const [detectionTabs,      setDetectionTabs]      = useState<Array<{id: string; label: string; session?: any; isNewSession?: boolean; isDirty?: boolean; diffMap?: any}>>([]);
   const [explorerActiveTab,  setExplorerActiveTab]  = useState<MainTab | null>(null);
   const [detectionActiveTab, setDetectionActiveTab] = useState<MainTab | null>(null);
   const [activeConsoleTab,   setActiveConsoleTab]   = useState<ConsoleTab>('traces');
@@ -51,10 +52,15 @@ export default function Dashboard() {
         e.preventDefault();
         setSettingsOpen(true);
       }
+      // Cmd+S / Ctrl+S to save active session
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        saveActiveSession();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [activeMainTab, explorerTabs, selectedSession]);
 
   // ── Custom events ─────────────────────────
   useEffect(() => {
@@ -66,16 +72,115 @@ export default function Dashboard() {
       setSplitView(event.detail);
       toast.info('Split View', 'Comparing two sessions side by side');
     };
+    const handleDiffCreated = (event: CustomEvent) => {
+      const { diffMap } = event.detail;
+      const diffId = diffMap.diffId;
+      const label = diffMap.displayName;
+      
+      // Add diff tab
+      setExplorerTabs(prev => [...prev, { 
+        id: diffId, 
+        label, 
+        diffMap 
+      }]);
+      switchMainTab(diffId);
+      toast.success('Diff Created', label);
+    };
+    
     window.addEventListener('vigia-report-maintenance', handleMaintenanceReport as EventListener);
     window.addEventListener('vigia-split-view', handleSplitView as EventListener);
+    window.addEventListener('vigia-diff-created', handleDiffCreated as EventListener);
     return () => {
       window.removeEventListener('vigia-report-maintenance', handleMaintenanceReport as EventListener);
       window.removeEventListener('vigia-split-view', handleSplitView as EventListener);
+      window.removeEventListener('vigia-diff-created', handleDiffCreated as EventListener);
     };
   }, []);
 
   const openTabs   = sidebarActivity === 'explorer' ? explorerTabs : sidebarActivity === 'detection' ? detectionTabs : [];
   const setOpenTabs = sidebarActivity === 'explorer' ? setExplorerTabs : sidebarActivity === 'detection' ? setDetectionTabs : () => {};
+
+  // ── Save active session to VFSManager ────
+  const saveActiveSession = async () => {
+    console.log('saveActiveSession called', { activeMainTab, openTabs });
+    const activeTab = openTabs.find(t => t.id === activeMainTab);
+    console.log('Active tab:', activeTab);
+    
+    // Handle diff map save
+    if (activeTab?.diffMap) {
+      try {
+        const { mapFileDB } = await import('@/lib/storage/mapFileDB');
+        await mapFileDB.saveDiffMap(activeTab.diffMap);
+        toast.success('Diff saved', activeTab.label);
+        return;
+      } catch (err) {
+        console.error('Failed to save diff:', err);
+        toast.error('Save failed', 'Could not save diff');
+        return;
+      }
+    }
+    
+    if (!activeTab?.isDirty || !activeTab.session) {
+      console.log('Not saving - no dirty tab or session');
+      return;
+    }
+
+    try {
+      // Get VFSManager instance from Sidebar
+      const vfsManager = (window as any).__vfsManager;
+      console.log('VFSManager:', vfsManager);
+      
+      if (!vfsManager) {
+        toast.error('Save failed', 'VFS Manager not initialized');
+        return;
+      }
+
+      // Convert MapFile to SessionData format
+      const session = activeTab.session;
+      const sessionData = {
+        userId: 'default',
+        geohash7: session.coverage.centerPoint.geohash,
+        timestamp: new Date(session.temporal.createdAt).toISOString(),
+        hazardCount: session.metadata.totalHazards,
+        verifiedCount: session.hazards.filter((h: any) => h.status === 'verified').length,
+        contributorId: 'user',
+        status: session.temporal.status,
+        location: session.location,
+        hazards: session.hazards,
+        metadata: {
+          ...session.metadata,
+          displayName: session.displayName, // Preserve displayName
+          coverage: session.coverage, // Preserve coverage data
+          temporal: session.temporal, // Preserve temporal data
+        },
+      };
+
+      console.log('Saving session data:', sessionData);
+      const saved = await vfsManager.createSession(sessionData);
+      console.log('Session saved:', saved);
+
+      // Delete from temporary storage (IndexedDB) since it's now in permanent storage
+      const { useMapFileStore } = await import('@/stores/mapFileStore');
+      await useMapFileStore.getState().deleteMapFile(session.sessionId);
+      console.log('Deleted from temporary storage');
+
+      // Mark as saved and update tab label
+      const newTabs = openTabs.map(t =>
+        t.id === activeMainTab ? { ...t, isDirty: false, label: session.displayName } : t
+      );
+      setOpenTabs(newTabs as any);
+
+      // Refresh sidebar
+      if ((window as any).__refreshSessions) {
+        (window as any).__refreshSessions();
+      }
+
+      toast.success('Session saved', session.displayName);
+    } catch (err) {
+      console.error('Save failed:', err);
+      toast.error('Save failed', String(err));
+    }
+  };
 
   // ── Console resize ────────────────────────
   const isDragging = useRef(false);
@@ -116,29 +221,90 @@ export default function Dashboard() {
   }, []);
 
   // ── Session handling ──────────────────────
-  const handleSessionClick = (session: any) => {
+  const handleSessionClick = async (session: any) => {
+    console.log('Session clicked:', session);
+    
     if (session.status === 'creating') {
       setSelectedSession(session);
       switchMainTab('map');
       return;
     }
-    const existingTab = explorerTabs.find(t => t.id === session.sessionId);
-    if (existingTab) {
-      switchMainTab(session.sessionId);
-      setSelectedSession(session);
+    
+    // For temporary files, load full MapFile from IndexedDB
+    let fullSession = session;
+    if (session.isTemporary) {
+      try {
+        const { useMapFileStore } = await import('@/stores/mapFileStore');
+        const mapFile = useMapFileStore.getState().files.get(session.sessionId);
+        if (mapFile) {
+          fullSession = mapFile;
+          console.log('Loaded full MapFile:', fullSession);
+        }
+      } catch (err) {
+        console.error('Failed to load full session:', err);
+      }
     } else {
-      const city   = session.location?.city   || 'Unknown';
-      const region = session.location?.region || '';
-      const label  = region ? `${city}, ${region}` : city;
-      setExplorerTabs(prev => [...prev, { id: session.sessionId, label, session }]);
-      switchMainTab(session.sessionId);
-      setSelectedSession(session);
+      // For saved sessions, reconstruct full session with coverage data from metadata
+      if (session.metadata?.coverage) {
+        fullSession = {
+          ...session,
+          coverage: session.metadata.coverage,
+          temporal: session.metadata.temporal,
+          displayName: session.metadata.displayName || session.displayName,
+        };
+        console.log('Reconstructed saved session:', fullSession);
+      }
+    }
+    
+    const existingTab = explorerTabs.find(t => t.id === fullSession.sessionId);
+    if (existingTab) {
+      switchMainTab(fullSession.sessionId);
+      setSelectedSession(fullSession);
+    } else {
+      const label = fullSession.displayName || fullSession.metadata?.displayName || `${fullSession.location?.city || 'Unknown'}`;
+      setExplorerTabs(prev => [...prev, { 
+        id: fullSession.sessionId, 
+        label, 
+        session: fullSession,
+        isDirty: session.isTemporary // Mark as dirty if temporary
+      }]);
+      switchMainTab(fullSession.sessionId);
+      setSelectedSession(fullSession);
       toast.info('Session opened', label);
     }
   };
 
-  const closeTab = (tabId: string, e: React.MouseEvent) => {
+  const closeTab = async (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // Check if tab is dirty (unsaved)
+    const tab = openTabs.find(t => t.id === tabId);
+    if (tab?.isDirty) {
+      const confirmed = window.confirm(`Do you want to save "${tab.label}" before closing?`);
+      if (confirmed) {
+        // Save before closing
+        const prevActiveTab = activeMainTab;
+        setActiveMainTab(tabId); // Temporarily set as active to save
+        await saveActiveSession();
+        setActiveMainTab(prevActiveTab);
+      } else {
+        // Delete temporary file from IndexedDB
+        try {
+          const { useMapFileStore } = await import('@/stores/mapFileStore');
+          await useMapFileStore.getState().deleteMapFile(tabId);
+          
+          // Refresh sidebar to remove it
+          if ((window as any).__refreshSessions) {
+            (window as any).__refreshSessions();
+          }
+          
+          toast.info('Discarded', `${tab.label} was not saved`);
+        } catch (err) {
+          console.error('Failed to delete temp file:', err);
+        }
+      }
+    }
+    
     const newTabs = openTabs.filter(t => t.id !== tabId);
     setOpenTabs(newTabs as any);
     if (activeMainTab === tabId) {
@@ -247,6 +413,7 @@ export default function Dashboard() {
                 >
                   {tab.id === 'map'      && <span style={{ color: active ? 'var(--c-accent-2)' : 'var(--c-text-3)' }}><MapPin size={12} /></span>}
                   {tab.id === 'sentinel' && <span style={{ color: active ? 'var(--c-accent-2)' : 'var(--c-text-3)' }}><Video  size={12} /></span>}
+                  {tab.isDirty && <span style={{ marginRight: 4, color: 'var(--c-text-2)' }}>●</span>}
                   {tab.label}
                   {closeable && (
                     <span onClick={(e) => closeTab(tab.id, e)} style={{
@@ -269,8 +436,8 @@ export default function Dashboard() {
 
           {activeMainTab === 'map' && (
             <Breadcrumb path={
-              selectedSession?.status !== 'creating'
-                ? ['World', selectedSession?.location?.country, selectedSession?.location?.region, selectedSession?.location?.city].filter(Boolean)
+              selectedSession?.location
+                ? ['World', selectedSession.location.country, selectedSession.location.state, selectedSession.location.city].filter(Boolean)
                 : ['World', 'India', 'Odisha', 'Rourkela']
             } />
           )}
@@ -295,19 +462,28 @@ export default function Dashboard() {
                     : 'Click Detection Node to upload dashcam footage'}
                 </div>
               </div>
+            ) : openTabs.find(t => t.id === activeMainTab)?.diffMap ? (
+              <DiffView diffMap={openTabs.find(t => t.id === activeMainTab)!.diffMap} />
             ) : openTabs.find(t => t.id === activeMainTab)?.isNewSession ? (
               <NewSessionView
                 onRefreshSessions={() => { if ((window as any).__refreshSessions) (window as any).__refreshSessions(); }}
-                onSessionCreated={(session) => {
+                onSessionCreated={async (session) => {
                   const newTabs = explorerTabs.map(t =>
                     t.id === activeMainTab
-                      ? { id: session.sessionId, label: `${session.location?.city || 'Unknown'}${session.location?.region ? ', ' + session.location.region : ''}`, session }
+                      ? { id: session.sessionId, label: session.displayName, session, isDirty: true }
                       : t
                   );
                   setExplorerTabs(newTabs);
                   switchMainTab(session.sessionId);
                   setSelectedSession(session);
-                  toast.success('Session created', session.location?.city || 'New session ready');
+                  toast.success('Session created', `${session.displayName} (unsaved)`);
+                  
+                  // Trigger both refresh mechanisms
+                  if ((window as any).__refreshSessions) (window as any).__refreshSessions();
+                  
+                  // Also refresh mapFileStore
+                  const { useMapFileStore } = await import('@/stores/mapFileStore');
+                  await useMapFileStore.getState().loadFiles();
                 }}
               />
             ) : selectedSession?.status === 'creating' ? (

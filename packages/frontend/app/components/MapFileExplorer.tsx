@@ -112,7 +112,6 @@ export function MapFileExplorer() {
                   ${isDropTarget ? 'ring-2 ring-blue-400' : ''}
                 `}
               >
-                <span>📄</span>
                 <span className="flex-1 truncate font-mono">{file.sessionId}</span>
               </div>
 
@@ -127,7 +126,7 @@ export function MapFileExplorer() {
                         ${activeFileId === branch.branchId ? 'bg-white' : 'hover:bg-white/50'}
                       `}
                     >
-                      <span>🌿</span>
+                      <span style={{ fontSize: '0.65rem', color: '#22c55e', fontFamily: 'monospace' }}>⎇</span>
                       <span className="flex-1 truncate font-mono text-gray-600">
                         {branch.branchName}
                       </span>

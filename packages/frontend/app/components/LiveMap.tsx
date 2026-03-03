@@ -20,22 +20,20 @@ type Hazard = {
 
 // ─────────────────────────────────────────────
 // Canvas CSS filter per map style
-// Applied directly to the <canvas> element so
-// ANY tile source (AWS, OSM, etc.) gets darkened.
-// This is the reliable cross-source approach.
+// Only apply filters to dark-osm and minimal
+// Satellite and terrain use actual AWS maps
 // ─────────────────────────────────────────────
 
 const MAP_FILTERS: Record<MapStyle, string> = {
   'dark-osm':  'brightness(0.82) saturate(0.50) hue-rotate(192deg) contrast(1.05)',
-  'satellite': 'brightness(0.72) saturate(0.70) hue-rotate(160deg) contrast(1.08)',
-  'terrain':   'brightness(0.75) saturate(0.55) hue-rotate(30deg)  contrast(1.06) sepia(0.12)',
+  'satellite': 'none', // No filter - use actual satellite map
+  'terrain':   'none', // No filter - use actual terrain map
   'minimal':   'brightness(0.60) saturate(0.20) contrast(1.10)',
 };
 
 // ─────────────────────────────────────────────
 // getMapStyle — returns AWS style URL
-// We switch visual appearance via CSS filter above
-// Map name can be swapped per style if env vars exist
+// Satellite and terrain use dedicated AWS maps
 // ─────────────────────────────────────────────
 
 function getMapStyle(style: MapStyle): string {
@@ -110,8 +108,11 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
   const [showUnverified, setShowUnverified]  = useState(true);
   const [mapReady,       setMapReady]        = useState(false);
 
-  // ── Real-time hazard events ─────────────────
+  // ── Real-time hazard events (only when no session selected) ─────────────────
   useEffect(() => {
+    // Don't listen for real-time hazards when viewing a session
+    if (selectedSession) return;
+    
     const handler = (event: CustomEvent) => {
       const { type, lat, lon, confidence, timestamp } = event.detail;
       setHazards(prev => [{
@@ -122,21 +123,36 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
     };
     window.addEventListener('hazard-detected', handler as EventListener);
     return () => window.removeEventListener('hazard-detected', handler as EventListener);
-  }, []);
+  }, [selectedSession]);
 
   // ── Load session hazards ────────────────────
   useEffect(() => {
     if (selectedSession?.hazards) {
+      console.log('LiveMap: Loading session', selectedSession);
+      console.log('LiveMap: Coverage', selectedSession.coverage);
+      
       const sessionHazards = selectedSession.hazards.map((h: any) => ({
         lat: h.lat, lon: h.lon,
         geohash: selectedSession.geohash7,
         hazardType: h.type, confidence: h.confidence,
-        status: 'verified', timestamp: selectedSession.timestamp,
+        status: 'verified', timestamp: selectedSession.timestamp || selectedSession.temporal?.createdAt,
       }));
       setHazards(sessionHazards);
-      if (map.current && sessionHazards.length > 0) {
-        map.current.jumpTo({ center: [sessionHazards[0].lon, sessionHazards[0].lat], zoom: 14 });
+      
+      // Center map on session coverage
+      if (map.current) {
+        if (selectedSession.coverage?.centerPoint) {
+          console.log('LiveMap: Centering on', selectedSession.coverage.centerPoint);
+          map.current.jumpTo({ 
+            center: [selectedSession.coverage.centerPoint.lon, selectedSession.coverage.centerPoint.lat], 
+            zoom: 12 
+          });
+        } else if (sessionHazards.length > 0) {
+          console.log('LiveMap: Centering on first hazard');
+          map.current.jumpTo({ center: [sessionHazards[0].lon, sessionHazards[0].lat], zoom: 14 });
+        }
       } else {
+        console.log('LiveMap: Map not ready, storing pending session');
         pendingSession.current = selectedSession;
       }
     } else {
@@ -147,7 +163,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
   // ── Fetch hazards ───────────────────────────
   const fetchHazards = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const apiUrl = process.env.NEXT_PUBLIC_TELEMETRY_API_URL || process.env.NEXT_PUBLIC_API_URL;
       if (!apiUrl) return;
       const res  = await fetch(`${apiUrl}/hazards`);
       const data = await res.json();
@@ -215,9 +231,20 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       // Apply filter immediately on load
       applyMapFilter(mapContainer.current, settings.mapStyle);
 
-      if (pendingSession.current?.hazards?.length > 0) {
-        const h = pendingSession.current.hazards[0];
-        map.current?.jumpTo({ center: [h.lon, h.lat], zoom: 14 });
+      // Handle pending session
+      if (pendingSession.current) {
+        console.log('LiveMap: Map loaded, processing pending session');
+        if (pendingSession.current.coverage?.centerPoint) {
+          console.log('LiveMap: Centering on coverage centerPoint', pendingSession.current.coverage.centerPoint);
+          map.current?.jumpTo({ 
+            center: [pendingSession.current.coverage.centerPoint.lon, pendingSession.current.coverage.centerPoint.lat], 
+            zoom: 12 
+          });
+        } else if (pendingSession.current.hazards?.length > 0) {
+          const h = pendingSession.current.hazards[0];
+          console.log('LiveMap: Centering on first hazard');
+          map.current?.jumpTo({ center: [h.lon, h.lat], zoom: 14 });
+        }
         pendingSession.current = null;
       }
     });
@@ -355,6 +382,18 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
           backdropFilter: 'blur(8px)',
           zIndex: 5, pointerEvents: 'none',
         }}>
+          {selectedSession && (
+            <>
+              <span style={{ fontSize: '0.62rem', color: 'var(--c-yellow)', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600 }}>
+                SNAPSHOT
+              </span>
+              <span style={{ color: 'var(--c-rose-border)', fontSize: '0.7rem' }}>│</span>
+              <span style={{ fontSize: '0.60rem', color: 'var(--c-text-2)', fontFamily: 'IBM Plex Mono, monospace' }}>
+                {new Date(selectedSession.temporal?.createdAt || selectedSession.timestamp).toLocaleString()}
+              </span>
+              <span style={{ color: 'var(--c-rose-border)', fontSize: '0.7rem' }}>│</span>
+            </>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--c-accent-2)', flexShrink: 0 }} />
             <span style={{ fontSize: '0.62rem', color: 'var(--c-text-2)', fontFamily: 'IBM Plex Mono, monospace' }}>
@@ -474,6 +513,105 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
           }}
           >
             Labels {settings.showLabels ? 'ON' : 'OFF'}
+          </button>
+        </div>
+      )}
+
+      {/* Update Session button - only show when viewing a session */}
+      {mapReady && selectedSession && (
+        <div style={{ position: 'absolute', top: 10, right: 180, zIndex: 5 }}>
+          <button
+            onClick={async () => {
+              const confirmed = window.confirm(
+                `Create updated snapshot of "${selectedSession.displayName || selectedSession.location?.city}"?\n\n` +
+                `This will create a NEW session with current hazard data while preserving the original snapshot.`
+              );
+              
+              if (!confirmed) return;
+              
+              try {
+                // Fetch current hazards for this location
+                const apiUrl = process.env.NEXT_PUBLIC_TELEMETRY_API_URL || process.env.NEXT_PUBLIC_API_URL;
+                const response = await fetch(`${apiUrl}/hazards?geohash=${selectedSession.coverage?.centerPoint?.geohash || selectedSession.geohash7}`);
+                const currentHazards = await response.json();
+                
+                // Create new session with updated data
+                const { useMapFileStore } = await import('@/stores/mapFileStore');
+                const now = Date.now();
+                const dateStr = new Date().toISOString().split('T')[0];
+                
+                // Get existing sessions to determine sequence number
+                const { getFilesByLocation } = useMapFileStore.getState();
+                const existingSessions = await getFilesByLocation(
+                  selectedSession.location.country,
+                  selectedSession.location.state,
+                  selectedSession.location.city
+                );
+                const todaySessions = existingSessions.filter(s => 
+                  s.displayName?.startsWith(`${selectedSession.location.city}-${dateStr}`)
+                );
+                const sequenceNum = String(todaySessions.length + 1).padStart(3, '0');
+                
+                const updatedSession = {
+                  ...selectedSession,
+                  sessionId: crypto.randomUUID(),
+                  displayName: `${selectedSession.location.city}-${dateStr}-${sequenceNum}`,
+                  temporal: {
+                    ...selectedSession.temporal,
+                    captureStart: now,
+                    captureEnd: now,
+                    createdAt: now,
+                    status: 'collecting' as const,
+                  },
+                  hazards: currentHazards,
+                  metadata: {
+                    ...selectedSession.metadata,
+                    totalHazards: currentHazards.length,
+                    hazardsByType: currentHazards.reduce((acc: any, h: any) => {
+                      acc[h.type] = (acc[h.type] || 0) + 1;
+                      return acc;
+                    }, {}),
+                  },
+                };
+                
+                await useMapFileStore.getState().saveMapFile(updatedSession);
+                
+                // Dispatch event to open new session
+                window.dispatchEvent(new CustomEvent('vigia-session-created', {
+                  detail: { session: updatedSession }
+                }));
+                
+                alert(`Updated snapshot created: ${updatedSession.displayName}`);
+              } catch (err) {
+                console.error('Failed to update session:', err);
+                alert('Failed to create updated snapshot');
+              }
+            }}
+            style={{
+              padding: '5px 12px',
+              borderRadius: 4,
+              cursor: 'pointer',
+              background: 'var(--c-overlay)',
+              border: '1px solid var(--c-accent-glow)',
+              backdropFilter: 'blur(8px)',
+              color: 'var(--c-accent-2)',
+              fontSize: '0.62rem',
+              fontFamily: 'IBM Plex Mono, monospace',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.background = 'var(--c-accent-glow)';
+              (e.currentTarget as HTMLElement).style.borderColor = 'var(--c-accent-2)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = 'var(--c-overlay)';
+              (e.currentTarget as HTMLElement).style.borderColor = 'var(--c-accent-glow)';
+            }}
+          >
+            Update Snapshot
           </button>
         </div>
       )}

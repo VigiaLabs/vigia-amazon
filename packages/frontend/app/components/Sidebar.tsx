@@ -11,6 +11,8 @@ import {
 import { VFSManager } from '../lib/vfs-manager';
 import { MaintenancePanel } from './MaintenancePanelIntegrated';
 import { useMapFileStore } from '../../stores/mapFileStore';
+import { useSettings } from './SettingsContext';
+import { applyMapFilter } from '../lib/map-style';
 
 interface SidebarProps {
   onSentinelEyeClick:  () => void;
@@ -262,16 +264,18 @@ function StatChip({ label, value, color }: { label: string; value: string; color
 // Sidebar Component
 // ─────────────────────────────────────────────
 
-const MIN_WIDTH = 160;
+const MIN_WIDTH = 0;  // Allow full collapse
 const MAX_WIDTH = 340;
 const DEFAULT_WIDTH = 210;
 
 export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpen, onSessionClick, onSessionsDeleted, onNewSessionClick, onRefreshSessions, onActivityChange }: SidebarProps) {
   const { computeDiff } = useMapFileStore();
+  const { settings } = useSettings();
   const [width, setWidth]         = useState(DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
   const [filterText, setFilterText] = useState('');
   const [sessions, setSessions] = useState<any[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
   const [vfsManager, setVfsManager] = useState<VFSManager | null>(null);
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
@@ -291,11 +295,19 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
   // Initialize VFS Manager
   useEffect(() => {
     const init = async () => {
-      const apiUrl = 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
-      const manager = new VFSManager(apiUrl);
-      await manager.init();
-      setVfsManager(manager);
-      loadSessions(manager);
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://sq2ri2n51g.execute-api.us-east-1.amazonaws.com/prod';
+        const manager = new VFSManager(apiUrl);
+        await manager.init();
+        setVfsManager(manager);
+        // Expose to window for save functionality
+        (window as any).__vfsManager = manager;
+        loadSessions(manager);
+      } catch (error) {
+        console.warn('VFS Manager init failed (CORS or network issue), using IndexedDB only:', error);
+        // Still load from IndexedDB even if VFS fails
+        loadSessions(null);
+      }
     };
     init();
   }, []);
@@ -309,12 +321,47 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
     }
   }, [contextMenu]);
 
-  const loadSessions = async (manager: VFSManager) => {
+  const loadSessions = async (manager: VFSManager | null) => {
+    setSessionsLoading(true);
     try {
-      const data = await manager.listSessions();
-      setSessions(data);
+      let savedSessions: any[] = [];
+      
+      // Load from VFSManager (permanent/saved) if available
+      if (manager) {
+        try {
+          savedSessions = await manager.listSessions();
+        } catch (error) {
+          console.warn('Failed to load from VFS (CORS or network issue), using IndexedDB only');
+        }
+      }
+      
+      // Load from mapFileStore (temporary/unsaved)
+      const { useMapFileStore } = await import('@/stores/mapFileStore');
+      await useMapFileStore.getState().loadFiles();
+      const tempFiles = Array.from(useMapFileStore.getState().files.values());
+      
+      // Convert temp files to session format with * indicator
+      const tempSessions = tempFiles.map((file: any) => ({
+        sessionId: file.sessionId,
+        timestamp: file.temporal?.createdAt || Date.now(),
+        location: file.location,
+        hazardCount: file.metadata?.totalHazards || 0,
+        verifiedCount: file.hazards?.filter((h: any) => h.status === 'verified').length || 0,
+        status: file.temporal?.status || 'draft',
+        geohash7: file.coverage?.centerPoint?.geohash || '',
+        isTemporary: true, // Flag to show *
+        displayName: file.displayName,
+      }));
+      
+      // Merge: temp sessions first, then saved sessions (avoid duplicates)
+      const savedIds = new Set(savedSessions.map((s: any) => s.sessionId));
+      const uniqueTempSessions = tempSessions.filter((t: any) => !savedIds.has(t.sessionId));
+      
+      setSessions([...uniqueTempSessions, ...savedSessions]);
     } catch (err) {
       console.error('Failed to load sessions:', err);
+    } finally {
+      setSessionsLoading(false);
     }
   };
 
@@ -333,7 +380,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
     
     setIsSearching(true);
     try {
-      const apiUrl = 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://sq2ri2n51g.execute-api.us-east-1.amazonaws.com/prod';
       const response = await fetch(`${apiUrl}/places/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -388,12 +435,16 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
         zoom: 2,
       });
 
+      map.on('load', () => {
+        applyMapFilter(mapRef.current, settings.mapStyle);
+      });
+
       map.on('click', async (e) => {
         const { lng, lat } = e.lngLat;
         
         // Reverse geocode via backend proxy
         try {
-          const apiUrl = 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://sq2ri2n51g.execute-api.us-east-1.amazonaws.com/prod';
           const response = await fetch(`${apiUrl}/places/search`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -530,12 +581,24 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
   }, {} as Record<string, Record<string, Record<string, Record<string, any[]>>>>);
 
   const formatSessionLabel = (session: any) => {
+    // Use displayName if available (for both temp and saved files)
+    if (session.displayName) {
+      return session.isTemporary ? `* ${session.displayName}` : session.displayName;
+    }
+    
+    // Check metadata for displayName (saved sessions store it here)
+    if (session.metadata?.displayName) {
+      return session.isTemporary ? `* ${session.metadata.displayName}` : session.metadata.displayName;
+    }
+    
+    // Fallback to timestamp formatting
     const date = new Date(session.timestamp);
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    const time = session.timestamp.split('T')[1].substring(0, 5);
-    return `${year}-${month}-${day} ${time}`;
+    const time = session.timestamp.split('T')[1]?.substring(0, 5) || '00:00';
+    const label = `${year}-${month}-${day} ${time}`;
+    return session.isTemporary ? `* ${label}` : label;
   };
 
   const handleSessionRightClick = (e: React.MouseEvent, session: any) => {
@@ -565,9 +628,19 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
       
       try {
         const deletedIds: string[] = [];
+        const { useMapFileStore } = await import('@/stores/mapFileStore');
+        
         for (const s of sessionsToDelete) {
           console.log('Deleting session:', s.sessionId);
-          await vfsManager.deleteSession(s.sessionId);
+          
+          // Delete from VFSManager if not temporary
+          if (!s.isTemporary) {
+            await vfsManager.deleteSession(s.sessionId);
+          }
+          
+          // Delete from mapFileStore
+          await useMapFileStore.getState().deleteMapFile(s.sessionId);
+          
           deletedIds.push(s.sessionId);
         }
         await loadSessions(vfsManager);
@@ -587,7 +660,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
     } else {
       // Delete single session
       const confirmed = window.confirm(
-        `Are you sure you want to delete session "${session.sessionId}"?`
+        `Are you sure you want to delete session "${session.displayName || session.sessionId}"?`
       );
       
       if (!confirmed) {
@@ -597,14 +670,23 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
       
       try {
         console.log('Deleting session:', session.sessionId);
-        await vfsManager.deleteSession(session.sessionId);
+        
+        // Delete from VFSManager (permanent storage) if not temporary
+        if (!session.isTemporary) {
+          await vfsManager.deleteSession(session.sessionId);
+        }
+        
+        // Delete from mapFileStore (temporary storage)
+        const { useMapFileStore } = await import('@/stores/mapFileStore');
+        await useMapFileStore.getState().deleteMapFile(session.sessionId);
+        
         await loadSessions(vfsManager);
         onSessionsDeleted?.([session.sessionId]);
         setContextMenu(null);
         
         // Emit trace event
         window.dispatchEvent(new CustomEvent('vigia-trace', {
-          detail: { type: 'delete', message: `Session deleted: ${session.sessionId}` }
+          detail: { type: 'delete', message: `Session deleted: ${session.displayName || session.sessionId}` }
         }));
         
         alert('Session deleted successfully');
@@ -803,8 +885,42 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
 
         {/* Tree */}
         <div style={{ flex: 1, overflowY: 'auto', paddingTop: 4, paddingBottom: 4 }}>
+          <style>{`@keyframes sb-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}`}</style>
           <TreeNode label="Sessions" icon="folder">
-              {Object.keys(sessionsByGeo).sort().map(continent => (
+              {sessionsLoading ? (
+                <>
+                  {[72, 88, 58, 80, 64].map((w, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      height: 30, paddingLeft: 24,
+                      opacity: 1 - i * 0.14,
+                    }}>
+                      <div style={{
+                        width: 13, height: 13, borderRadius: 2, flexShrink: 0,
+                        background: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)',
+                        backgroundSize: '200% 100%',
+                        animation: `sb-shimmer 1.6s ease-in-out ${i * 0.1}s infinite`,
+                      }} />
+                      <div style={{
+                        height: 9, borderRadius: 3, width: `${w}%`, maxWidth: 130,
+                        background: 'linear-gradient(90deg,rgba(255,255,255,0.04) 25%,rgba(255,255,255,0.09) 50%,rgba(255,255,255,0.04) 75%)',
+                        backgroundSize: '200% 100%',
+                        animation: `sb-shimmer 1.6s ease-in-out ${i * 0.1}s infinite`,
+                      }} />
+                    </div>
+                  ))}
+                </>
+              ) : Object.keys(sessionsByGeo).length === 0 ? (
+                <div style={{
+                  padding: '10px 16px',
+                  color: C.textMut,
+                  fontSize: '0.71rem',
+                  fontFamily: 'Inter, sans-serif',
+                  fontStyle: 'italic',
+                }}>
+                  No sessions yet
+                </div>
+              ) : Object.keys(sessionsByGeo).sort().map(continent => (
                 <TreeNode 
                   key={`continent-${continent}`} 
                   label={continent} 
@@ -855,7 +971,11 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                             })}
                           >
                             {sessionsByGeo[continent][country][region][city]
-                              .sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp))
+                              .sort((a: any, b: any) => {
+                                const aTime = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
+                                const bTime = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
+                                return bTime - aTime;
+                              })
                               .map((session: any) => {
                                 const label = formatSessionLabel(session);
                                 const badgeColor = session.hazardCount > 5 ? C.red : session.hazardCount > 2 ? C.yellow : C.green;
@@ -888,71 +1008,53 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                                       setDropTarget(null);
                                       
                                       if (draggedSession && draggedSession.sessionId !== session.sessionId) {
-                                        // Check if same location (city)
-                                        const sameLocation = draggedSession.location?.city === session.location?.city;
-                                        
-                                        if (sameLocation) {
-                                          // Trigger split view
-                                          window.dispatchEvent(new CustomEvent('vigia-split-view', {
-                                            detail: { left: draggedSession, right: session }
+                                        // Create diff between two sessions
+                                        try {
+                                          // Load full sessions from stores
+                                          const { useMapFileStore } = await import('@/stores/mapFileStore');
+                                          await useMapFileStore.getState().loadFiles();
+                                          
+                                          let sessionA = useMapFileStore.getState().files.get(draggedSession.sessionId);
+                                          let sessionB = useMapFileStore.getState().files.get(session.sessionId);
+                                          
+                                          // If not in temp storage, reconstruct from VFS data
+                                          if (!sessionA) {
+                                            sessionA = {
+                                              ...draggedSession,
+                                              coverage: draggedSession.metadata?.coverage,
+                                              temporal: draggedSession.metadata?.temporal,
+                                              displayName: draggedSession.metadata?.displayName || draggedSession.displayName,
+                                            } as any;
+                                          }
+                                          
+                                          if (!sessionB) {
+                                            sessionB = {
+                                              ...session,
+                                              coverage: session.metadata?.coverage,
+                                              temporal: session.metadata?.temporal,
+                                              displayName: session.metadata?.displayName || session.displayName,
+                                            } as any;
+                                          }
+                                          
+                                          // Compute diff
+                                          const { computeMapDiff } = await import('@vigia/shared');
+                                          const diffMap = computeMapDiff(sessionA as any, sessionB as any);
+                                          
+                                          // Dispatch event to open diff view
+                                          window.dispatchEvent(new CustomEvent('vigia-diff-created', {
+                                            detail: { diffMap }
                                           }));
                                           
                                           // Emit trace event
                                           window.dispatchEvent(new CustomEvent('vigia-trace', {
                                             detail: { 
-                                              type: 'split', 
-                                              message: `Split view: ${draggedSession.sessionId} | ${session.sessionId}` 
+                                              type: 'diff', 
+                                              message: `Diff created: ${diffMap.displayName}` 
                                             }
                                           }));
-                                        } else {
-                                          // Different locations - compute diff
-                                          try {
-                                            // Add sessions to store as MapFiles
-                                            const { files } = useMapFileStore.getState();
-                                            
-                                            const fileA: any = {
-                                              version: "1.0",
-                                              sessionId: draggedSession.sessionId,
-                                              timestamp: new Date(draggedSession.timestamp).getTime(),
-                                              hazards: draggedSession.hazards || [],
-                                              metadata: {
-                                                totalHazards: draggedSession.hazardCount || 0,
-                                                geohashBounds: draggedSession.geohash7 || '',
-                                                contributors: [draggedSession.contributorId || 'unknown']
-                                              }
-                                            };
-                                            
-                                            const fileB: any = {
-                                              version: "1.0",
-                                              sessionId: session.sessionId,
-                                              timestamp: new Date(session.timestamp).getTime(),
-                                              hazards: session.hazards || [],
-                                              metadata: {
-                                                totalHazards: session.hazardCount || 0,
-                                                geohashBounds: session.geohash7 || '',
-                                                contributors: [session.contributorId || 'unknown']
-                                              }
-                                            };
-                                            
-                                            // Add to store
-                                            files.set(fileA.sessionId, fileA);
-                                            files.set(fileB.sessionId, fileB);
-                                            useMapFileStore.setState({ files: new Map(files) });
-                                            
-                                            // Compute diff
-                                            await computeDiff(fileA.sessionId, fileB.sessionId);
-                                            
-                                            // Emit trace event
-                                            window.dispatchEvent(new CustomEvent('vigia-trace', {
-                                              detail: { 
-                                                type: 'diff', 
-                                                message: `Diff computed: ${draggedSession.sessionId} → ${session.sessionId}` 
-                                              }
-                                            }));
-                                          } catch (err) {
-                                            console.error('Failed to compute diff:', err);
-                                            alert('Failed to compute diff. Sessions may not have hazard data.');
-                                          }
+                                        } catch (err) {
+                                          console.error('Failed to create diff:', err);
+                                          alert('Failed to create diff');
                                         }
                                         
                                         setDraggedSession(null);
@@ -1038,17 +1140,63 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
         ref={handleRef}
         className={`drag-handle-x ${isDragging ? 'dragging' : ''}`}
         onMouseDown={onMouseDown}
+        onDoubleClick={() => {
+          // Double-click to collapse/expand
+          setWidth(width < 50 ? DEFAULT_WIDTH : 0);
+        }}
         style={{
-          width: 4,
-          background: 'transparent',
+          width: 6,
+          background: isDragging ? 'rgba(59,130,246,0.5)' : 'rgba(203,213,225,0.3)',
           cursor: 'col-resize',
           flexShrink: 0,
-          borderRight: `1px solid ${C.border}`,
-          transition: 'background 0.15s',
+          transition: isDragging ? 'none' : 'background 0.15s',
+          position: 'relative',
+          display: width === 0 ? 'none' : 'block', // Hide handle when collapsed
         }}
-        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.3)'}
-        onMouseLeave={(e) => { if (!isDragging) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-      />
+        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.5)'}
+        onMouseLeave={(e) => { if (!isDragging) (e.currentTarget as HTMLElement).style.background = 'rgba(203,213,225,0.3)'; }}
+      >
+        {/* Visual indicator */}
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 3,
+          height: 40,
+          background: 'rgba(100,116,139,0.4)',
+          borderRadius: 2,
+          pointerEvents: 'none',
+        }} />
+      </div>
+
+      {/* Show expand button when collapsed */}
+      {width === 0 && (
+        <div
+          onClick={() => setWidth(DEFAULT_WIDTH)}
+          style={{
+            width: 24,
+            height: 48,
+            position: 'absolute',
+            left: 48,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'rgba(203,213,225,0.5)',
+            border: `1px solid ${C.border}`,
+            borderRadius: '0 4px 4px 0',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            transition: 'background 0.15s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.3)'}
+          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(203,213,225,0.5)'}
+        >
+          <ChevronRight size={16} style={{ color: C.text }} />
+        </div>
+      )}
 
       {/* ── Location Selection Modal ───────────────── */}
       {showLocationModal && (

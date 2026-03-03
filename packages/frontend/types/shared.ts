@@ -21,12 +21,49 @@ export interface Hazard {
 export interface MapFile {
   version: '1.0';
   sessionId: string;
-  timestamp: number;
+  displayName: string;
+  coverage: {
+    type: 'city' | 'region' | 'neighborhood' | 'custom';
+    name: string;
+    boundingBox: {
+      north: number;
+      south: number;
+      east: number;
+      west: number;
+    };
+    centerPoint: {
+      lat: number;
+      lon: number;
+      geohash: string;
+    };
+    geohashPrecision: number;
+    geohashTiles: string[];
+    areaKm2: number;
+  };
+  temporal: {
+    captureStart: number;
+    captureEnd: number;
+    createdAt: number;
+    finalizedAt?: number;
+    duration: number;
+    status: 'collecting' | 'finalized' | 'archived';
+  };
+  location: {
+    continent: string;
+    country: string;
+    state: string;
+    region: string;
+    city: string;
+    neighborhood?: string;
+  };
   hazards: Hazard[];
   metadata: {
     totalHazards: number;
-    geohashBounds: string[];
+    hazardsByType: Record<string, number>;
+    severityDistribution: Record<string, number>;
     contributors: string[];
+    dataSource: 'manual' | 'video' | 'import';
+    tags: string[];
   };
 }
 
@@ -34,6 +71,7 @@ export interface ScenarioBranch extends MapFile {
   parentMapId: string;
   branchId: string;
   branchName: string;
+  timestamp: number;
   simulatedChanges: {
     addedHazards: Hazard[];
     removedHazards: string[];

@@ -18,17 +18,18 @@ self.onmessage = async (e: MessageEvent<BranchWorkerMessage>) => {
   const { type, parentFile, branchId, branchName, simulatedChanges } = e.data;
 
   if (type === 'CREATE_BRANCH' && parentFile) {
-    const branch: ScenarioBranch = {
+    const branch = {
       ...parentFile,
       parentMapId: parentFile.sessionId,
       branchId: uuidv4(),
       branchName: branchName || `Branch ${new Date().toISOString()}`,
+      timestamp: Date.now(),
       simulatedChanges: {
         addedHazards: [],
         removedHazards: [],
         modifiedSeverity: [],
       },
-    };
+    } as ScenarioBranch;
 
     // Store in IndexedDB
     await saveBranchToIndexedDB(branch);

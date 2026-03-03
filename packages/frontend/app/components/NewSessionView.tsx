@@ -1,7 +1,12 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Square, X } from 'lucide-react';
+import ngeohash from 'ngeohash';
+import { v4 as uuidv4 } from 'uuid';
+import type { MapFile } from '@/types/shared';
+import { useSettings } from './SettingsContext';
+import { applyMapFilter } from '../lib/map-style';
 
 const C = {
   bg: '#FFFFFF',
@@ -16,20 +21,38 @@ const C = {
 };
 
 interface NewSessionViewProps {
-  onSessionCreated: (session: any) => void;
+  onSessionCreated: (session: MapFile) => void;
   onRefreshSessions?: () => void;
 }
 
+interface BoundingBox {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
 export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessionViewProps) {
+  const { settings } = useSettings();
   const [locationSearch, setLocationSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<any>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [showMap, setShowMap] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [drawMode, setDrawMode] = useState(false);
+  const [boundingBox, setBoundingBox] = useState<BoundingBox | null>(null);
+  const [coverageType, setCoverageType] = useState<'city' | 'region' | 'neighborhood' | 'custom'>('city');
+  
   const mapRef = useRef<any>(null);
   const mapInstanceRef = useRef<any>(null);
+  const drawStartRef = useRef<{ lat: number; lon: number } | null>(null);
+  const drawModeRef = useRef(false);
+  const rectangleRef = useRef<any>(null);
+
+  // Keep drawModeRef in sync with drawMode state
+  useEffect(() => {
+    drawModeRef.current = drawMode;
+  }, [drawMode]);
 
   const searchLocation = async (query: string) => {
     if (!query.trim()) {
@@ -59,6 +82,7 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
         lon: r.Position[0],
         city: r.Address?.Locality || r.Address?.Municipality,
         region: r.Address?.Region?.Name || r.Address?.SubRegion?.Name,
+        state: r.Address?.Region?.Name,
         country: r.Address?.Country?.Name,
       })) || [];
       setSearchResults(results);
@@ -75,9 +99,8 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
     return () => clearTimeout(timer);
   }, [locationSearch]);
 
-  // Initialize map when map view is shown
   useEffect(() => {
-    if (viewMode !== 'map' || !mapRef.current || mapInstanceRef.current) return;
+    if (!selectedLocation || !mapRef.current || mapInstanceRef.current) return;
     
     const initMap = async () => {
       const maplibregl = (await import('maplibre-gl')).default;
@@ -85,69 +108,192 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
       const mapName = process.env.NEXT_PUBLIC_MAP_NAME || 'StandardMap';
       
       const map = new maplibregl.Map({
-        container: 'new-session-map',
+        container: mapRef.current,
         style: `https://maps.geo.us-east-1.amazonaws.com/maps/v0/maps/${mapName}/style-descriptor?key=${apiKey}`,
-        center: [0, 20],
-        zoom: 2,
+        center: [selectedLocation.lon, selectedLocation.lat],
+        zoom: 12,
       });
 
       mapInstanceRef.current = map;
 
-      map.on('click', async (e) => {
-        const { lng, lat } = e.lngLat;
-        
-        try {
-          const apiUrl = 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
-          const response = await fetch(`${apiUrl}/places/search`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ position: [lng, lat] }),
-          });
+      map.on('load', () => {
+        applyMapFilter(mapRef.current, settings.mapStyle);
+        // Draw bounding box handlers
+        map.on('mousedown', (e) => {
+          if (!drawModeRef.current) return;
+          e.preventDefault();
+          drawStartRef.current = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+        });
+
+        map.on('mousemove', (e) => {
+          if (!drawModeRef.current || !drawStartRef.current) return;
           
-          if (!response.ok) {
-            setSelectedLocation({ lat, lon: lng, name: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
-            return;
+          const start = drawStartRef.current;
+          const end = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+          
+          const box = {
+            north: Math.max(start.lat, end.lat),
+            south: Math.min(start.lat, end.lat),
+            east: Math.max(start.lon, end.lon),
+            west: Math.min(start.lon, end.lon),
+          };
+
+          const coordinates = [
+            [box.west, box.north],
+            [box.east, box.north],
+            [box.east, box.south],
+            [box.west, box.south],
+            [box.west, box.north],
+          ];
+
+          if (map.getSource('bbox')) {
+            (map.getSource('bbox') as any).setData({
+              type: 'Feature' as const,
+              properties: {},
+              geometry: { type: 'Polygon' as const, coordinates: [coordinates] },
+            });
+          } else {
+            map.addSource('bbox', {
+              type: 'geojson',
+              data: {
+                type: 'Feature' as const,
+                properties: {},
+                geometry: { type: 'Polygon' as const, coordinates: [coordinates] },
+              },
+            });
+            map.addLayer({
+              id: 'bbox-fill',
+              type: 'fill',
+              source: 'bbox',
+              paint: { 'fill-color': '#3B82F6', 'fill-opacity': 0.2 },
+            });
+            map.addLayer({
+              id: 'bbox-outline',
+              type: 'line',
+              source: 'bbox',
+              paint: { 'line-color': '#3B82F6', 'line-width': 2 },
+            });
           }
+        });
+
+        map.on('mouseup', (e) => {
+          if (!drawModeRef.current || !drawStartRef.current) return;
           
-          const data = await response.json();
-          const place = data.ResultItems?.[0];
+          const start = drawStartRef.current;
+          const end = { lat: e.lngLat.lat, lon: e.lngLat.lng };
           
-          setSelectedLocation({
-            lat,
-            lon: lng,
-            name: place?.Title || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
-            city: place?.Address?.Locality || place?.Address?.Municipality,
-            region: place?.Address?.Region?.Name || place?.Address?.SubRegion?.Name,
-            country: place?.Address?.Country?.Name,
-          });
-        } catch (err) {
-          setSelectedLocation({ lat, lon: lng, name: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
-        }
+          const box = {
+            north: Math.max(start.lat, end.lat),
+            south: Math.min(start.lat, end.lat),
+            east: Math.max(start.lon, end.lon),
+            west: Math.min(start.lon, end.lon),
+          };
+
+          setBoundingBox(box);
+          setDrawMode(false);
+          drawStartRef.current = null;
+        });
       });
     };
     
     initMap();
-  }, [viewMode]);
+  }, [selectedLocation]);
+
+  // Separate effect to handle drawMode changes
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    
+    const map = mapInstanceRef.current;
+    if (drawMode) {
+      map.dragPan.disable();
+      map.doubleClickZoom.disable();
+      map.scrollZoom.disable();
+      map.getCanvas().style.cursor = 'crosshair';
+    } else {
+      map.dragPan.enable();
+      map.doubleClickZoom.enable();
+      map.scrollZoom.enable();
+      map.getCanvas().style.cursor = '';
+    }
+  }, [drawMode]);
+
+  const selectLocation = (loc: any) => {
+    setSelectedLocation(loc);
+    setSearchResults([]);
+    setLocationSearch(loc.name);
+  };
+
+  const startDrawing = () => {
+    setDrawMode(true);
+    setBoundingBox(null);
+  };
+
+  const clearBoundingBox = () => {
+    setBoundingBox(null);
+    if (mapInstanceRef.current) {
+      const map = mapInstanceRef.current;
+      if (map.getLayer('bbox-fill')) map.removeLayer('bbox-fill');
+      if (map.getLayer('bbox-outline')) map.removeLayer('bbox-outline');
+      if (map.getSource('bbox')) map.removeSource('bbox');
+    }
+  };
+
+  const calculateArea = (box: BoundingBox): number => {
+    const R = 6371;
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const latDiff = toRad(box.north - box.south);
+    const lonDiff = toRad(box.east - box.west);
+    const avgLat = toRad((box.north + box.south) / 2);
+    const height = latDiff * R;
+    const width = lonDiff * R * Math.cos(avgLat);
+    return Math.abs(height * width);
+  };
+
+  const determineGeohashPrecision = (areaKm2: number): number => {
+    if (areaKm2 > 1000) return 5;
+    if (areaKm2 > 100) return 6;
+    if (areaKm2 > 10) return 7;
+    if (areaKm2 > 1) return 8;
+    return 9;
+  };
+
+  const generateGeohashTiles = (box: BoundingBox, precision: number): string[] => {
+    const tiles = new Set<string>();
+    const cellSizes: Record<number, { lat: number; lon: number }> = {
+      5: { lat: 0.02197, lon: 0.02197 },
+      6: { lat: 0.00549, lon: 0.00549 },
+      7: { lat: 0.00137, lon: 0.00137 },
+      8: { lat: 0.00034, lon: 0.00034 },
+      9: { lat: 0.000086, lon: 0.000086 },
+    };
+    const cellSize = cellSizes[precision] || cellSizes[7];
+    
+    for (let lat = box.south; lat <= box.north; lat += cellSize.lat) {
+      for (let lon = box.west; lon <= box.east; lon += cellSize.lon) {
+        tiles.add(ngeohash.encode(lat, lon, precision));
+      }
+    }
+    return Array.from(tiles);
+  };
 
   const createSession = async () => {
-    if (!selectedLocation || isCreating) return;
+    if (!selectedLocation || !boundingBox || isCreating) return;
     
     setIsCreating(true);
     
     try {
-      const apiUrl = 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
+      const { useMapFileStore } = await import('@/stores/mapFileStore');
+      const { saveMapFile } = useMapFileStore.getState();
       
-      const city = typeof selectedLocation.city === 'string' 
-        ? selectedLocation.city 
-        : selectedLocation.city?.Name || selectedLocation.name.split(',')[0]?.trim() || 'Unknown';
+      const areaKm2 = calculateArea(boundingBox);
+      const geohashPrecision = determineGeohashPrecision(areaKm2);
+      const geohashTiles = generateGeohashTiles(boundingBox, geohashPrecision);
+      const centerLat = (boundingBox.north + boundingBox.south) / 2;
+      const centerLon = (boundingBox.east + boundingBox.west) / 2;
       
-      const region = typeof selectedLocation.region === 'string'
-        ? selectedLocation.region
-        : selectedLocation.region?.Name || selectedLocation.name.split(',')[1]?.trim() || 'Unknown';
-      
-      const country = typeof selectedLocation.country === 'string'
-        ? selectedLocation.country
-        : selectedLocation.country?.Name || selectedLocation.name.split(',').pop()?.trim() || 'Unknown';
+      const city = selectedLocation.city || 'Unknown';
+      const state = selectedLocation.state || selectedLocation.region || 'Unknown';
+      const country = selectedLocation.country || 'Unknown';
       
       const continentMap: Record<string, string> = {
         'France': 'Europe', 'Germany': 'Europe', 'Italy': 'Europe', 'Spain': 'Europe', 'United Kingdom': 'Europe',
@@ -159,35 +305,67 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
       };
       const continent = continentMap[country] || 'Unknown';
       
-      const geohash = `9q8yy${Math.random().toString(36).substring(2, 4)}`;
+      const now = Date.now();
+      const dateStr = new Date().toISOString().split('T')[0];
       
-      const response = await fetch(`${apiUrl}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: 'default',
-          geohash7: geohash,
-          timestamp: new Date().toISOString(),
-          hazardCount: Math.floor(Math.random() * 10) + 1,
-          verifiedCount: Math.floor(Math.random() * 5),
-          contributorId: 'user-' + Date.now(),
-          status: 'draft',
-          location: { continent, country, region, city },
-          hazards: [{ 
-            type: 'POTHOLE', 
-            lat: selectedLocation.lat, 
-            lon: selectedLocation.lon, 
-            confidence: 0.85 
-          }],
-          metadata: { source: 'manual' },
-        }),
-      });
+      // Query existing sessions for this city and date to get next sequence number
+      const { getFilesByLocation } = useMapFileStore.getState();
+      const existingSessions = await getFilesByLocation(country, state, city);
+      const todaySessions = existingSessions.filter(s => 
+        s.displayName.startsWith(`${city}-${dateStr}`)
+      );
+      const sequenceNum = String(todaySessions.length + 1).padStart(3, '0');
       
-      const session = await response.json();
+      const displayName = `${city}-${dateStr}-${sequenceNum}`;
       
-      // Emit trace event
+      
+      const session: MapFile = {
+        version: '1.0',
+        sessionId: uuidv4(),
+        displayName,
+        coverage: {
+          type: coverageType,
+          name: `${city}, ${state}, ${country}`,
+          boundingBox,
+          centerPoint: {
+            lat: centerLat,
+            lon: centerLon,
+            geohash: ngeohash.encode(centerLat, centerLon, 7),
+          },
+          geohashPrecision,
+          geohashTiles,
+          areaKm2,
+        },
+        temporal: {
+          captureStart: now,
+          captureEnd: now,
+          createdAt: now,
+          duration: 0,
+          status: 'collecting',
+        },
+        location: {
+          continent,
+          country,
+          state,
+          region: state,
+          city,
+        },
+        hazards: [],
+        metadata: {
+          totalHazards: 0,
+          hazardsByType: {},
+          severityDistribution: {},
+          contributors: [],
+          dataSource: 'manual',
+          tags: [],
+        },
+      };
+      
+      // Save to IndexedDB
+      await saveMapFile(session);
+      
       window.dispatchEvent(new CustomEvent('vigia-trace', {
-        detail: { type: 'create', message: `Session created: ${city}, ${region} (${session.sessionId})` }
+        detail: { type: 'create', message: `Session created: ${displayName} (${areaKm2.toFixed(2)} km²)` }
       }));
       
       onRefreshSessions?.();
@@ -195,165 +373,95 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
     } catch (err) {
       console.error('Failed to create session:', err);
       alert('Failed to create session');
+    } finally {
       setIsCreating(false);
     }
   };
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      height: '100%', 
-      background: 'var(--c-bg)',
-      padding: 24,
-      gap: 16,
-    }}>
-      {/* Header */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.bg, padding: 24, gap: 16, overflowY: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--c-text)', fontFamily: 'Inter, sans-serif', margin: 0 }}>
+        <h2 style={{ fontSize: '1.2rem', fontWeight: 600, color: C.text, fontFamily: 'Inter, sans-serif', margin: 0 }}>
           Create New Session
         </h2>
-        <button
-          onClick={() => setViewMode(viewMode === 'map' ? 'list' : 'map')}
-          style={{
-            padding: '6px 12px',
-            background: viewMode === 'map' ? 'var(--c-accent-bg)' : 'var(--c-panel)',
-            border: `1px solid var(--c-border)`,
-            borderRadius: 3,
-            color: 'var(--c-text)',
-            fontSize: '0.8rem',
-            fontFamily: 'Inter, sans-serif',
-            cursor: 'pointer',
-          }}
-        >
-          {viewMode === 'map' ? 'List View' : 'Map View'}
-        </button>
       </div>
 
-      {/* Search Bar */}
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: 8,
-        padding: '10px 14px',
-        background: 'var(--c-panel)',
-        border: `1px solid var(--c-border)`,
-        borderRadius: 4,
-      }}>
-        <Search size={16} style={{ color: 'var(--c-text-3)' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4 }}>
+        <Search size={16} style={{ color: C.textMut }} />
         <input
           type="text"
           value={locationSearch}
           onChange={(e) => setLocationSearch(e.target.value)}
           placeholder="Search for a location..."
-          style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            color: 'var(--c-text)',
-            fontSize: '0.9rem',
-            fontFamily: 'Inter, sans-serif',
-          }}
+          style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: '0.9rem', fontFamily: 'Inter, sans-serif', color: C.text }}
         />
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {viewMode === 'list' ? (
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {isSearching && (
-              <div style={{ textAlign: 'center', padding: 20, color: 'var(--c-text-3)', fontSize: '0.85rem' }}>
-                Searching...
-              </div>
-            )}
-            {!isSearching && searchResults.length === 0 && locationSearch && (
-              <div style={{ textAlign: 'center', padding: 20, color: 'var(--c-text-3)', fontSize: '0.85rem' }}>
-                No results found
-              </div>
-            )}
-            {!isSearching && searchResults.length === 0 && !locationSearch && (
-              <div style={{ textAlign: 'center', padding: 20, color: 'var(--c-text-3)', fontSize: '0.85rem' }}>
-                Type to search for any location worldwide
-              </div>
-            )}
-            {searchResults.map((loc, i) => (
-              <button
-                key={i}
-                onClick={() => setSelectedLocation(loc)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  background: selectedLocation?.name === loc.name ? 'var(--c-accent-bg)' : 'transparent',
-                  border: `1px solid ${selectedLocation?.name === loc.name ? 'var(--c-accent)' : 'var(--c-border)'}`,
-                  borderRadius: 4,
-                  color: 'var(--c-text)',
-                  fontSize: '0.85rem',
-                  fontFamily: 'Inter, sans-serif',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  marginBottom: 8,
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={(e) => {
-                  if (selectedLocation?.name !== loc.name) {
-                    (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (selectedLocation?.name !== loc.name) {
-                    (e.currentTarget as HTMLElement).style.background = 'transparent';
-                  }
-                }}
-              >
-                {loc.name}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div 
-            id="new-session-map" 
-            ref={mapRef}
-            style={{ 
-              flex: 1,
-              background: 'var(--c-panel)',
-              borderRadius: 4,
-              border: `1px solid var(--c-border)`,
-            }}
-          />
-        )}
-      </div>
-
-      {/* Footer */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        paddingTop: 16,
-        borderTop: `1px solid var(--c-border)`,
-      }}>
-        <div style={{ fontSize: '0.75rem', color: 'var(--c-text-3)', fontFamily: 'JetBrains Mono, monospace' }}>
-          {selectedLocation && `${selectedLocation.lat.toFixed(4)}, ${selectedLocation.lon.toFixed(4)}`}
+      {searchResults.length > 0 && (
+        <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${C.border}`, borderRadius: 4, background: C.bg }}>
+          {searchResults.map((loc, i) => (
+            <div
+              key={i}
+              onClick={() => selectLocation(loc)}
+              style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: i < searchResults.length - 1 ? `1px solid ${C.border}` : 'none', background: selectedLocation === loc ? C.accentBg : C.bg }}
+            >
+              <div style={{ fontSize: '0.9rem', fontWeight: 500, color: C.text }}>{loc.name}</div>
+              <div style={{ fontSize: '0.75rem', color: C.textSec }}>{loc.city}, {loc.region}, {loc.country}</div>
+            </div>
+          ))}
         </div>
-        <button
-          onClick={createSession}
-          disabled={!selectedLocation || isCreating}
-          style={{
-            padding: '8px 20px',
-            background: selectedLocation && !isCreating ? 'var(--c-accent)' : 'var(--c-text-3)',
-            border: 'none',
-            borderRadius: 4,
-            color: '#fff',
-            fontSize: '0.85rem',
-            fontFamily: 'Inter, sans-serif',
-            fontWeight: 500,
-            cursor: selectedLocation && !isCreating ? 'pointer' : 'not-allowed',
-            opacity: selectedLocation && !isCreating ? 1 : 0.5,
-          }}
-        >
-          {isCreating ? 'Creating...' : 'Create Session'}
-        </button>
-      </div>
+      )}
+
+      {selectedLocation && (
+        <>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={startDrawing}
+              disabled={drawMode}
+              style={{ padding: '8px 16px', background: drawMode ? C.panel : C.accent, color: drawMode ? C.textMut : '#FFF', border: `1px solid ${C.border}`, borderRadius: 4, cursor: drawMode ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Square size={14} />
+              {drawMode ? 'Drawing... (drag on map)' : 'Draw Coverage Area'}
+            </button>
+            {boundingBox && (
+              <button onClick={clearBoundingBox} style={{ padding: '8px 16px', background: C.panel, color: C.text, border: `1px solid ${C.border}`, borderRadius: 4, cursor: 'pointer', fontSize: '0.85rem', fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <X size={14} />
+                Clear
+              </button>
+            )}
+          </div>
+
+          {boundingBox && (
+            <div style={{ padding: 16, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: C.text, marginBottom: 8 }}>Coverage Details</div>
+              <div style={{ fontSize: '0.75rem', color: C.textSec, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>Area: {calculateArea(boundingBox).toFixed(2)} km²</div>
+                <div>Precision: {determineGeohashPrecision(calculateArea(boundingBox))}</div>
+                <div>Tiles: {generateGeohashTiles(boundingBox, determineGeohashPrecision(calculateArea(boundingBox))).length}</div>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label style={{ fontSize: '0.75rem', color: C.textSec, display: 'block', marginBottom: 4 }}>Coverage Type</label>
+                <select value={coverageType} onChange={(e) => setCoverageType(e.target.value as any)} style={{ width: '100%', padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 4, fontSize: '0.85rem', fontFamily: 'Inter, sans-serif' }}>
+                  <option value="city">City</option>
+                  <option value="region">Region</option>
+                  <option value="neighborhood">Neighborhood</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div ref={mapRef} style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 4, minHeight: 400, maxHeight: 500 }} />
+
+          <button
+            onClick={createSession}
+            disabled={!boundingBox || isCreating}
+            style={{ padding: '12px 24px', background: (!boundingBox || isCreating) ? C.panel : C.accent, color: (!boundingBox || isCreating) ? C.textMut : '#FFF', border: `1px solid ${C.border}`, borderRadius: 4, cursor: (!boundingBox || isCreating) ? 'not-allowed' : 'pointer', fontSize: '0.9rem', fontWeight: 600, fontFamily: 'Inter, sans-serif' }}
+          >
+            {isCreating ? 'Creating...' : 'Create Session'}
+          </button>
+        </>
+      )}
     </div>
   );
 }

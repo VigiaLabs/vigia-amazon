@@ -79,13 +79,33 @@ interface HazardVerificationPanelProps {
 }
 
 export function HazardVerificationPanel({ onHazardDetected }: HazardVerificationPanelProps) {
-  const [hazards, setHazards] = useState<Hazard[]>([]);
+  const [hazards, setHazards] = useState<Hazard[]>(() => {
+    // Load from sessionStorage on mount
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('vigia-detected-hazards');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          return [];
+        }
+      }
+    }
+    return [];
+  });
   const [expandedHazard, setExpandedHazard] = useState<string | null>(null);
   const [currentlyVerifying, setCurrentlyVerifying] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hazardId: string } | null>(null);
   const processingQueue = useRef<string[]>([]);
   const lastProcessedTime = useRef<number>(0);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Save to sessionStorage whenever hazards change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('vigia-detected-hazards', JSON.stringify(hazards));
+    }
+  }, [hazards]);
 
   // Listen for new hazard detections from VideoUploader
   useEffect(() => {
@@ -96,17 +116,24 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
       const geohash = encodeGeohash(lat, lon, 7);
       const hazardId = `${geohash}#${timestamp}`;
       
-      const newHazard: Hazard = {
-        id: hazardId,
-        type,
-        lat,
-        lon,
-        confidence,
-        timestamp,
-        status: 'pending',
-      };
-      
-      setHazards(prev => [newHazard, ...prev]);
+      // Check if hazard already exists
+      setHazards(prev => {
+        if (prev.some(h => h.id === hazardId)) {
+          return prev; // Skip duplicate
+        }
+        
+        const newHazard: Hazard = {
+          id: hazardId,
+          type,
+          lat,
+          lon,
+          confidence,
+          timestamp,
+          status: 'pending',
+        };
+        
+        return [newHazard, ...prev];
+      });
       
       // Emit trace event
       window.dispatchEvent(new CustomEvent('vigia-trace', {
@@ -137,7 +164,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
     }));
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
+      const apiUrl = process.env.NEXT_PUBLIC_TELEMETRY_API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://sq2ri2n51g.execute-api.us-east-1.amazonaws.com/prod';
       
       const response = await fetch(`${apiUrl}/verify-hazard-sync`, {
         method: 'POST',
@@ -168,10 +195,24 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
         }));
       }
 
-      // Wait a bit then emit complete
+      // Wait a bit then emit complete with reasoning
       await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const finalStatus = verificationScore >= 70 ? 'VERIFIED' : 'UNVERIFIED';
+      const reasoningText = reasoning || (verificationScore >= 70 
+        ? 'Hazard meets verification criteria' 
+        : 'Hazard does not meet verification criteria');
+      
       window.dispatchEvent(new CustomEvent('verification-complete', {
         detail: { traceId, steps, verificationScore }
+      }));
+      
+      // Emit final reasoning trace
+      window.dispatchEvent(new CustomEvent('vigia-trace', {
+        detail: { 
+          type: 'verification', 
+          message: `${finalStatus}: ${currentHazard.type} (score: ${verificationScore}/100)\nReasoning: ${reasoningText}` 
+        }
       }));
 
       const newStatus: HazardStatus = verificationScore >= 70 ? 'verified' : 'rejected';

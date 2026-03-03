@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useSettings } from './SettingsContext';
+import { applyMapFilter } from '../lib/map-style';
 
 const C = {
   bg:      'var(--c-bg)',
@@ -187,6 +188,8 @@ export function NetworkMapView() {
     map.current.on('load', () => {
       if (!map.current) return;
 
+      applyMapFilter(mapContainer.current, settings.mapStyle);
+
       // Add road segments (green lines tracing city road networks)
       const roadFeatures = DEMO_NODES.flatMap((node, index) =>
         generateCityRoads(node, index).map((roadCoords, roadIndex) => ({
@@ -357,6 +360,12 @@ export function NetworkMapView() {
       }
     } catch (_) { /* layers may not exist yet */ }
   }, [settings.theme, mapReady]);
+
+  // Reapply CSS filter whenever map style setting changes
+  useEffect(() => {
+    if (!mapReady) return;
+    applyMapFilter(mapContainer.current, settings.mapStyle);
+  }, [settings.mapStyle, mapReady]);
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: C.bg }}>

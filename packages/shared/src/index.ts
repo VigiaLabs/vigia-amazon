@@ -44,5 +44,8 @@ export interface LedgerEntry {
 
 // Innovation features exports
 export * from './mapFile';
+export * from './migration';
+export * from './diffMap';
+export * from './diffCompute';
 export * from './agentTrace';
 export * from './economic';
