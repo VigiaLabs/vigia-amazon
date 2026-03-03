@@ -1037,7 +1037,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                                           }
                                           
                                           // Compute diff
-                                          const { computeMapDiff } = await import('@vigia/shared');
+                                          const { computeMapDiff } = await import('../../lib/diffCompute');
                                           const diffMap = computeMapDiff(sessionA as any, sessionB as any);
                                           
                                           // Dispatch event to open diff view

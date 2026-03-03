@@ -1,5 +1,93 @@
 import type { MapFile, ScenarioBranch } from '@/types/shared';
-import { isLegacyMapFile, migrateLegacyMapFile } from '@vigia/shared';
+import ngeohash from 'ngeohash';
+
+// ── Inlined from @vigia/shared/migration (avoids monorepo resolution issues) ──
+
+function _calcBoundingBox(hazards: any[]) {
+  if (hazards.length === 0) return { north: 0, south: 0, east: 0, west: 0 };
+  const lats = hazards.map((h: any) => h.lat);
+  const lons = hazards.map((h: any) => h.lon);
+  return { north: Math.max(...lats), south: Math.min(...lats), east: Math.max(...lons), west: Math.min(...lons) };
+}
+
+function _calcCenterPoint(bb: { north: number; south: number; east: number; west: number }) {
+  const lat = (bb.north + bb.south) / 2;
+  const lon = (bb.east + bb.west) / 2;
+  return { lat, lon, geohash: ngeohash.encode(lat, lon, 7) };
+}
+
+function _calcArea(bb: { north: number; south: number; east: number; west: number }): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const h = toRad(bb.north - bb.south) * R;
+  const w = toRad(bb.east - bb.west) * R * Math.cos(toRad((bb.north + bb.south) / 2));
+  return Math.abs(h * w);
+}
+
+function _geohashPrecision(areaKm2: number): number {
+  if (areaKm2 > 1000) return 5;
+  if (areaKm2 > 100) return 6;
+  if (areaKm2 > 10) return 7;
+  if (areaKm2 > 1) return 8;
+  return 9;
+}
+
+function _geohashTiles(bb: { north: number; south: number; east: number; west: number }, precision: number): string[] {
+  const step: Record<number, number> = { 5: 0.02197, 6: 0.00549, 7: 0.00137, 8: 0.00034, 9: 0.000086 };
+  const s = step[precision] ?? 0.00137;
+  const tiles = new Set<string>();
+  for (let lat = bb.south; lat <= bb.north; lat += s)
+    for (let lon = bb.west; lon <= bb.east; lon += s)
+      tiles.add(ngeohash.encode(lat, lon, precision));
+  return Array.from(tiles);
+}
+
+function _hazardStats(hazards: any[]) {
+  const byType: Record<string, number> = {};
+  const bySeverity: Record<string, number> = {};
+  for (const h of hazards) {
+    byType[h.type] = (byType[h.type] || 0) + 1;
+    bySeverity[String(h.severity)] = (bySeverity[String(h.severity)] || 0) + 1;
+  }
+  return { hazardsByType: byType, severityDistribution: bySeverity };
+}
+
+function isLegacyMapFile(file: any): boolean {
+  return file.version === '1.0' && typeof file.timestamp === 'number' && !file.coverage && !file.temporal;
+}
+
+function migrateLegacyMapFile(legacy: any): any {
+  const bb = _calcBoundingBox(legacy.hazards);
+  const center = _calcCenterPoint(bb);
+  const area = _calcArea(bb);
+  const precision = _geohashPrecision(area);
+  const tiles = _geohashTiles(bb, precision);
+  const city = legacy.sessionId.split('#')[0] || 'Unknown';
+  const displayName = `${city}-${new Date(legacy.timestamp).toISOString().split('T')[0]}-001`;
+  const { hazardsByType, severityDistribution } = _hazardStats(legacy.hazards);
+  const captureStart = legacy.hazards.length > 0 ? Math.min(...legacy.hazards.map((h: any) => h.timestamp)) : legacy.timestamp;
+  const captureEnd   = legacy.hazards.length > 0 ? Math.max(...legacy.hazards.map((h: any) => h.timestamp)) : legacy.timestamp;
+  return {
+    version: '1.0',
+    sessionId: legacy.sessionId,
+    displayName,
+    coverage: {
+      type: area > 100 ? 'city' : area > 10 ? 'neighborhood' : 'custom',
+      name: `${city}, Unknown, Unknown`,
+      boundingBox: bb, centerPoint: center,
+      geohashPrecision: precision, geohashTiles: tiles, areaKm2: area,
+    },
+    temporal: { captureStart, captureEnd, createdAt: legacy.timestamp, duration: captureEnd - captureStart, status: 'finalized' },
+    location: { continent: 'Unknown', country: 'Unknown', state: 'Unknown', region: 'Unknown', city },
+    hazards: legacy.hazards,
+    metadata: {
+      totalHazards: legacy.metadata?.totalHazards ?? legacy.hazards.length,
+      hazardsByType, severityDistribution,
+      contributors: legacy.metadata?.contributors ?? [],
+      dataSource: 'import', tags: [],
+    },
+  };
+}
 
 const DB_NAME = 'VigiaMapFiles';
 const DB_VERSION = 3; // Increment for schema changes

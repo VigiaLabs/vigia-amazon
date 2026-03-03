@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { DiffMapFile } from '@vigia/shared';
+import type { DiffMapFile } from '../../lib/diffCompute';
 import maplibregl from 'maplibre-gl';
 import { GitCompare, RefreshCw } from 'lucide-react';
 import { DiffChat } from './DiffChat';
