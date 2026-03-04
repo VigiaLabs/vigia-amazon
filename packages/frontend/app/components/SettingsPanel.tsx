@@ -17,7 +17,7 @@ function SectionLabel({ label }: { label: string }) {
       fontSize: '0.6rem', color: 'var(--c-text-3)',
       letterSpacing: '0.1em', textTransform: 'uppercase',
       fontWeight: 600, padding: '16px 16px 6px',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: "'IBM Plex Sans', sans-serif",
     }}>
       {label}
     </div>
@@ -32,11 +32,11 @@ function OptionPill({ label, active, onClick, icon }: {
     <button onClick={onClick} style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       gap: 5, padding: '5px 8px', borderRadius: 4, flex: 1,
-      border: `1px solid ${active ? 'rgba(59,130,246,0.5)' : 'var(--c-border)'}`,
-      background: active ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.02)',
+      border: `1px solid ${active ? 'var(--c-accent-2)' : 'var(--c-border)'}`,
+      background: active ? 'var(--c-accent-glow)' : 'rgba(255,255,255,0.02)',
       color: active ? 'var(--c-accent-2)' : 'var(--c-text-2)',
       fontSize: '0.7rem', cursor: 'pointer',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: "'IBM Plex Sans', sans-serif",
       transition: 'all 0.12s',
     }}
     onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; }}
@@ -64,8 +64,8 @@ function ToggleRow({ label, sublabel, value, onChange, icon }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {icon && <span style={{ color: 'var(--c-text-3)' }}>{icon}</span>}
         <div>
-          <div style={{ fontSize: '0.76rem', color: 'var(--c-text)', fontFamily: 'Inter, sans-serif' }}>{label}</div>
-          {sublabel && <div style={{ fontSize: '0.64rem', color: 'var(--c-text-3)', fontFamily: 'Inter, sans-serif', marginTop: 1 }}>{sublabel}</div>}
+          <div style={{ fontSize: '0.76rem', color: 'var(--c-text)', fontFamily: "'IBM Plex Sans', sans-serif" }}>{label}</div>
+          {sublabel && <div style={{ fontSize: '0.64rem', color: 'var(--c-text-3)', fontFamily: "'IBM Plex Sans', sans-serif", marginTop: 1 }}>{sublabel}</div>}
         </div>
       </div>
       <div className="vigia-toggle" style={{ background: value ? 'var(--c-accent)' : 'rgba(255,255,255,0.1)' }}>
@@ -83,8 +83,8 @@ function SliderRow({ label, value, min, max, step, unit = '', onChange }: {
   return (
     <div style={{ padding: '8px 16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: '0.76rem', color: 'var(--c-text)', fontFamily: 'Inter, sans-serif' }}>{label}</span>
-        <span style={{ fontSize: '0.7rem', color: 'var(--c-accent-2)', fontFamily: 'JetBrains Mono, monospace' }}>
+        <span style={{ fontSize: '0.76rem', color: 'var(--c-text)', fontFamily: "'IBM Plex Sans', sans-serif" }}>{label}</span>
+        <span style={{ fontSize: '0.7rem', color: 'var(--c-accent-2)', fontFamily: "'IBM Plex Mono', monospace" }}>
           {value}{unit}
         </span>
       </div>
@@ -139,7 +139,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Sliders size={13} style={{ color: 'var(--c-accent-2)' }} />
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--c-text)', fontFamily: 'Inter, sans-serif' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--c-text)', fontFamily: "'IBM Plex Sans', sans-serif" }}>
               Settings
             </span>
           </div>
@@ -162,7 +162,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           <SectionLabel label="Appearance" />
 
           <div style={{ padding: '0 16px 10px' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--c-text-2)', marginBottom: 8, fontFamily: 'Inter, sans-serif' }}>Color Theme</div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--c-text-2)', marginBottom: 8, fontFamily: "'IBM Plex Sans', sans-serif" }}>Color Theme</div>
             <div style={{ display: 'flex', gap: 6 }}>
               <OptionPill label="Dark"    active={settings.theme === 'dark'}           onClick={() => update({ theme: 'dark' })}           icon={<Moon   size={10} />} />
               <OptionPill label="Darker"  active={settings.theme === 'darker'}         onClick={() => update({ theme: 'darker' })}         icon={<Monitor size={10} />} />
@@ -172,7 +172,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           </div>
 
           <div style={{ padding: '0 16px 10px' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--c-text-2)', marginBottom: 8, fontFamily: 'Inter, sans-serif' }}>UI Density</div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--c-text-2)', marginBottom: 8, fontFamily: "'IBM Plex Sans', sans-serif" }}>UI Density</div>
             <div style={{ display: 'flex', gap: 6 }}>
               <OptionPill label="Compact"  active={settings.density === 'compact'}  onClick={() => update({ density: 'compact' })}  />
               <OptionPill label="Default"  active={settings.density === 'default'}  onClick={() => update({ density: 'default' })}  />
@@ -197,15 +197,15 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 <button key={s.id} onClick={() => update({ mapStyle: s.id })} style={{
                   display: 'flex', flexDirection: 'column', gap: 6, padding: 8,
                   borderRadius: 4, cursor: 'pointer', position: 'relative', flex: 1,
-                  border: `1px solid ${active ? 'rgba(59,130,246,0.5)' : 'var(--c-border)'}`,
-                  background: active ? 'rgba(59,130,246,0.08)' : 'rgba(255,255,255,0.02)',
+                  border: `1px solid ${active ? 'var(--c-accent-2)' : 'var(--c-border)'}`,
+                  background: active ? 'var(--c-accent-glow)' : 'rgba(255,255,255,0.02)',
                   transition: 'all 0.12s',
                 }}
                 onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; }}
                 onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'; }}
                 >
                   <div style={{ height: 32, borderRadius: 3, background: s.preview, border: '1px solid rgba(255,255,255,0.06)' }} />
-                  <span style={{ fontSize: '0.65rem', color: active ? 'var(--c-accent-2)' : 'var(--c-text-2)', fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
+                  <span style={{ fontSize: '0.65rem', color: active ? 'var(--c-accent-2)' : 'var(--c-text-2)', fontFamily: "'IBM Plex Sans', sans-serif", textAlign: 'center' }}>
                     {s.label}
                   </span>
                   {active && (
@@ -249,7 +249,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 width: '100%', padding: '7px 0', borderRadius: 4,
                 border: '1px solid var(--c-border)', background: 'rgba(255,255,255,0.02)',
                 color: 'var(--c-text-2)', fontSize: '0.72rem', cursor: 'pointer',
-                fontFamily: 'Inter, sans-serif', transition: 'all 0.12s',
+                fontFamily: "'IBM Plex Sans', sans-serif", transition: 'all 0.12s',
               }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.color = 'var(--c-text)'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'; (e.currentTarget as HTMLElement).style.color = 'var(--c-text-2)'; }}
@@ -264,17 +264,17 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           borderTop: '1px solid var(--c-border)', padding: '10px 16px',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
         }}>
-          <span style={{ fontSize: '0.6rem', color: 'var(--c-text-3)', fontFamily: 'JetBrains Mono, monospace' }}>
+          <span style={{ fontSize: '0.6rem', color: 'var(--c-text-3)', fontFamily: "'IBM Plex Mono', monospace" }}>
             VIGIA v1.0 · settings.json
           </span>
           <button onClick={onClose} style={{
             padding: '4px 12px', borderRadius: 3,
-            border: '1px solid rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.1)',
+            border: '1px solid var(--c-accent-glow-strong)', background: 'var(--c-accent-glow)',
             color: 'var(--c-accent-2)', fontSize: '0.72rem', cursor: 'pointer',
-            fontFamily: 'Inter, sans-serif', transition: 'all 0.12s',
+            fontFamily: "'IBM Plex Sans', sans-serif", transition: 'all 0.12s',
           }}
-          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.18)'}
-          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.1)'}
+          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(92,143,248,0.22)'}
+          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--c-accent-glow)'}
           >
             Done
           </button>

@@ -13,7 +13,7 @@ const C = {
   accent: 'var(--c-accent-2)',
 };
 
-const MONO = "'JetBrains Mono', 'IBM Plex Mono', monospace";
+const MONO = "'IBM Plex Mono', monospace";
 
 export function NetworkHealthPanel() {
   const [geohash, setGeohash] = useState('drt2yzr');
@@ -171,15 +171,15 @@ export function NetworkHealthPanel() {
       {error && (
         <div style={{
           padding: 12,
-          background: 'rgba(239, 68, 68, 0.1)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
+          background: 'var(--c-red-dim)',
+          border: '1px solid rgba(240,96,108,0.3)',
           borderRadius: 4,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
         }}>
-          <AlertCircle size={16} style={{ color: '#EF4444' }} />
-          <span style={{ fontSize: '0.85rem', color: '#EF4444' }}>{error}</span>
+          <AlertCircle size={16} style={{ color: 'var(--c-red)' }} />
+          <span style={{ fontSize: '0.78rem', color: 'var(--c-red)' }}>{error}</span>
         </div>
       )}
 

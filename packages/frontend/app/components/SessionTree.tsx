@@ -1,65 +1,59 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { TreeNodeComponent, TreeNode } from './TreeNode';
 import { VFSManager, SessionFile } from '../lib/vfs-manager';
+import { Search, RefreshCw } from 'lucide-react';
 
 interface SessionTreeProps {
   vfsManager: VFSManager | null;
   onFileOpen?: (sessionId: string) => void;
 }
 
+const FONT_UI   = "'IBM Plex Sans', system-ui, sans-serif";
+const FONT_MONO = "'IBM Plex Mono', monospace";
+
 export function SessionTree({ vfsManager, onFileOpen }: SessionTreeProps) {
-  const [tree, setTree] = useState<TreeNode[]>([]);
-  const [selected, setSelected] = useState<string>('');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['sessions']));
+  const [tree,        setTree]        = useState<TreeNode[]>([]);
+  const [selected,    setSelected]    = useState<string>('');
+  const [expanded,    setExpanded]    = useState<Set<string>>(new Set(['sessions']));
   const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing,  setRefreshing]  = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (vfsManager) {
-      loadSessions();
-    }
+    if (vfsManager) loadSessions();
   }, [vfsManager]);
 
   const loadSessions = async () => {
     if (!vfsManager) return;
-
+    setRefreshing(true);
     try {
       const sessions = await vfsManager.listSessions();
-      const treeData = buildTree(sessions);
-      setTree(treeData);
-    } catch (error) {
-      console.error('Failed to load sessions:', error);
+      setTree(buildTree(sessions));
+    } catch (err) {
+      console.error('Failed to load sessions:', err);
+    } finally {
+      setRefreshing(false);
     }
   };
 
   const buildTree = (sessions: SessionFile[]): TreeNode[] => {
-    const root: TreeNode[] = [
-      {
-        id: 'sessions',
-        label: 'Sessions',
-        type: 'folder',
-        depth: 0,
-        children: [],
-      },
-    ];
+    const root: TreeNode[] = [{
+      id: 'sessions', label: 'Sessions',
+      type: 'folder', depth: 0, children: [],
+    }];
 
-    // Group sessions by location
     const locationMap = new Map<string, SessionFile[]>();
-    
     sessions.forEach(session => {
-      const location = session.location;
-      const key = location ? 
-        `${location.continent}/${location.country}/${location.region}/${location.city}` : 
-        'Uncategorized';
-      
-      if (!locationMap.has(key)) {
-        locationMap.set(key, []);
-      }
+      const loc = session.location;
+      const key = loc
+        ? `${loc.continent}/${loc.country}/${loc.region}/${loc.city}`
+        : 'Uncategorized';
+      if (!locationMap.has(key)) locationMap.set(key, []);
       locationMap.get(key)!.push(session);
     });
 
-    // Build tree structure
     locationMap.forEach((sessionList, locationKey) => {
       const parts = locationKey.split('/');
       let currentLevel = root[0].children!;
@@ -68,22 +62,13 @@ export function SessionTree({ vfsManager, onFileOpen }: SessionTreeProps) {
       parts.forEach((part, index) => {
         currentPath += `/${part}`;
         let folder = currentLevel.find(n => n.id === currentPath);
-
         if (!folder) {
-          folder = {
-            id: currentPath,
-            label: part,
-            type: 'folder',
-            depth: index + 1,
-            children: [],
-          };
+          folder = { id: currentPath, label: part, type: 'folder', depth: index + 1, children: [] };
           currentLevel.push(folder);
         }
-
         currentLevel = folder.children!;
       });
 
-      // Add session files
       sessionList.forEach(session => {
         currentLevel.push({
           id: session.sessionId,
@@ -102,19 +87,13 @@ export function SessionTree({ vfsManager, onFileOpen }: SessionTreeProps) {
   const handleExpand = (nodeId: string) => {
     setExpanded(prev => {
       const next = new Set(prev);
-      if (next.has(nodeId)) {
-        next.delete(nodeId);
-      } else {
-        next.add(nodeId);
-      }
+      next.has(nodeId) ? next.delete(nodeId) : next.add(nodeId);
       return next;
     });
   };
 
   const handleSelect = (nodeId: string) => {
     setSelected(nodeId);
-    
-    // If it's a file, trigger open callback
     const findNode = (nodes: TreeNode[]): TreeNode | null => {
       for (const node of nodes) {
         if (node.id === nodeId) return node;
@@ -125,32 +104,23 @@ export function SessionTree({ vfsManager, onFileOpen }: SessionTreeProps) {
       }
       return null;
     };
-
     const node = findNode(tree);
-    if (node?.type === 'file' && onFileOpen) {
-      onFileOpen(nodeId);
-    }
+    if (node?.type === 'file' && onFileOpen) onFileOpen(nodeId);
   };
 
   const filterTree = (nodes: TreeNode[], query: string): TreeNode[] => {
     if (!query) return nodes;
-
     return nodes.map(node => {
       if (node.type === 'file') {
         return node.label.toLowerCase().includes(query.toLowerCase()) ? node : null;
       }
-
       const filteredChildren = node.children ? filterTree(node.children, query) : [];
-      if (filteredChildren.length > 0) {
-        return { ...node, children: filteredChildren };
-      }
-
-      return null;
+      return filteredChildren.length > 0 ? { ...node, children: filteredChildren } : null;
     }).filter(Boolean) as TreeNode[];
   };
 
-  const renderTree = (nodes: TreeNode[]) => {
-    return nodes.map(node => (
+  const renderTree = (nodes: TreeNode[]) =>
+    nodes.map(node => (
       <TreeNodeComponent
         key={node.id}
         node={node}
@@ -160,41 +130,139 @@ export function SessionTree({ vfsManager, onFileOpen }: SessionTreeProps) {
         onSelect={handleSelect}
       />
     ));
-  };
 
   const filteredTree = filterTree(tree, searchQuery);
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Search Bar */}
-      <div className="p-2 border-b border-ide-border">
-        <input
-          type="text"
-          placeholder="Search sessions..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full px-2 py-1 text-xs bg-ide-bg border border-ide-border rounded focus:outline-none focus:border-ide-text"
-        />
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+      {/* ── Search bar ──────────────────────── */}
+      <div style={{
+        padding: '6px 8px',
+        borderBottom: '1px solid var(--c-border)',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: 'var(--c-input)',
+          border: '1px solid var(--c-border)',
+          borderRadius: 5,
+          padding: '0 8px',
+          transition: 'border-color 0.15s, box-shadow 0.15s',
+        }}
+        onFocusCapture={(e) => {
+          (e.currentTarget as HTMLElement).style.borderColor = 'var(--c-border-hi)';
+          (e.currentTarget as HTMLElement).style.boxShadow = '0 0 0 2px var(--c-accent-glow)';
+        }}
+        onBlurCapture={(e) => {
+          (e.currentTarget as HTMLElement).style.borderColor = 'var(--c-border)';
+          (e.currentTarget as HTMLElement).style.boxShadow = 'none';
+        }}
+        >
+          <Search size={11} style={{ color: 'var(--c-text-3)', flexShrink: 0 }} />
+          <input
+            ref={searchRef}
+            type="text"
+            placeholder="Filter sessions…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--c-text)',
+              fontSize: '0.74rem',
+              fontFamily: FONT_UI,
+              padding: '5px 0',
+              caretColor: 'var(--c-rose-2)',
+            }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 14, height: 14, borderRadius: '50%', border: 'none',
+                background: 'rgba(255,255,255,0.08)', color: 'var(--c-text-3)',
+                cursor: 'pointer', fontSize: '0.6rem', flexShrink: 0,
+              }}
+            >✕</button>
+          )}
+        </div>
       </div>
 
-      {/* Tree View */}
-      <div className="flex-1 overflow-y-auto p-2">
+      {/* ── Tree view ───────────────────────── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 4px 8px' }}>
         {filteredTree.length > 0 ? (
           renderTree(filteredTree)
         ) : (
-          <div className="text-xs text-ide-text-secondary text-center py-4">
-            {searchQuery ? 'No sessions found' : 'No sessions yet'}
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', padding: '28px 16px', gap: 8,
+          }}>
+            <Search size={18} style={{ color: 'var(--c-text-3)', opacity: 0.35 }} />
+            <span style={{
+              fontSize: '0.72rem', color: 'var(--c-text-3)',
+              fontFamily: FONT_UI, textAlign: 'center', lineHeight: 1.5,
+            }}>
+              {searchQuery ? 'No sessions match' : 'No sessions yet'}
+            </span>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  fontSize: '0.68rem', color: 'var(--c-accent-2)',
+                  fontFamily: FONT_UI, background: 'none', border: 'none',
+                  cursor: 'pointer', padding: 0,
+                }}
+              >
+                Clear filter
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* Refresh Button */}
-      <div className="p-2 border-t border-ide-border">
+      {/* ── Refresh button ──────────────────── */}
+      <div style={{
+        padding: '6px 8px',
+        borderTop: '1px solid var(--c-border)',
+        flexShrink: 0,
+      }}>
         <button
           onClick={loadSessions}
-          className="w-full px-2 py-1 text-xs bg-ide-panel border border-ide-border text-ide-text hover:bg-ide-hover rounded"
+          disabled={refreshing}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: '5px 0', borderRadius: 4,
+            border: '1px solid var(--c-border)',
+            background: 'var(--c-panel)',
+            color: refreshing ? 'var(--c-text-3)' : 'var(--c-text-2)',
+            fontSize: '0.72rem', cursor: refreshing ? 'default' : 'pointer',
+            fontFamily: FONT_UI, transition: 'all 0.12s',
+          }}
+          onMouseEnter={(e) => {
+            if (!refreshing) {
+              (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)';
+              (e.currentTarget as HTMLElement).style.borderColor = 'var(--c-border-md)';
+              (e.currentTarget as HTMLElement).style.color = 'var(--c-text)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = 'var(--c-panel)';
+            (e.currentTarget as HTMLElement).style.borderColor = 'var(--c-border)';
+            (e.currentTarget as HTMLElement).style.color = 'var(--c-text-2)';
+          }}
         >
-          Refresh
+          <RefreshCw
+            size={11}
+            style={{
+              color: refreshing ? 'var(--c-accent-2)' : 'var(--c-text-3)',
+              animation: refreshing ? 'spin 0.9s linear infinite' : 'none',
+            }}
+          />
+          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
     </div>

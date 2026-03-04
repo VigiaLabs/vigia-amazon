@@ -12,31 +12,32 @@ export function DiffLegend() {
       position: 'absolute',
       top: 16,
       left: 16,
-      background: '#FFFFFF',
-      border: '1px solid #CBD5E1',
-      borderRadius: 4,
+      background: 'var(--c-elevated)',
+      border: '1px solid var(--c-border-md)',
+      borderRadius: 6,
       padding: 12,
       minWidth: 200,
       zIndex: 10,
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: "'IBM Plex Sans', sans-serif",
       pointerEvents: 'auto',
+      boxShadow: 'var(--shadow-md)',
     }}>
-      <div style={{ fontSize: '0.75rem', fontWeight: 600, marginBottom: 8, color: '#1E293B' }}>
-        DIFF ANALYSIS
+      <div style={{ fontSize: '0.60rem', fontWeight: 600, marginBottom: 10, color: 'var(--c-text-3)', letterSpacing: '0.10em', textTransform: 'uppercase' }}>
+        Diff Analysis
       </div>
-      
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem' }}>
-          <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#EF4444' }} />
-          <span style={{ color: '#64748B' }}>New: {diffState.summary.totalNew}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem' }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--c-red)', boxShadow: '0 0 6px var(--c-red)', flexShrink: 0 }} />
+          <span style={{ color: 'var(--c-text-2)' }}>New: <span style={{ color: 'var(--c-text)', fontWeight: 500 }}>{diffState.summary.totalNew}</span></span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem' }}>
-          <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#10B981' }} />
-          <span style={{ color: '#64748B' }}>Fixed: {diffState.summary.totalFixed}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem' }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--c-green)', boxShadow: '0 0 6px var(--c-green)', flexShrink: 0 }} />
+          <span style={{ color: 'var(--c-text-2)' }}>Fixed: <span style={{ color: 'var(--c-text)', fontWeight: 500 }}>{diffState.summary.totalFixed}</span></span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem' }}>
-          <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#F59E0B' }} />
-          <span style={{ color: '#64748B' }}>Worsened: {diffState.summary.totalWorsened}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem' }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--c-yellow)', boxShadow: '0 0 6px var(--c-yellow)', flexShrink: 0 }} />
+          <span style={{ color: 'var(--c-text-2)' }}>Worsened: <span style={{ color: 'var(--c-text)', fontWeight: 500 }}>{diffState.summary.totalWorsened}</span></span>
         </div>
       </div>
 
@@ -45,15 +46,19 @@ export function DiffLegend() {
           onClick={clearDiff}
           style={{
             flex: 1,
-            padding: '6px 12px',
-            fontSize: '0.7rem',
+            padding: '5px 10px',
+            fontSize: '0.70rem',
             fontWeight: 500,
-            background: '#F5F5F5',
-            border: '1px solid #CBD5E1',
-            borderRadius: 3,
+            background: 'var(--c-hover)',
+            border: '1px solid var(--c-border)',
+            borderRadius: 4,
             cursor: 'pointer',
-            fontFamily: 'Inter, sans-serif',
+            color: 'var(--c-text-2)',
+            fontFamily: "'IBM Plex Sans', sans-serif",
+            transition: 'background var(--dur-fast), color var(--dur-fast)',
           }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--c-hover-md)'; (e.currentTarget as HTMLElement).style.color = 'var(--c-text)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--c-text-2)'; }}
         >
           Clear
         </button>
@@ -69,16 +74,19 @@ export function DiffLegend() {
           }}
           style={{
             flex: 1,
-            padding: '6px 12px',
-            fontSize: '0.7rem',
+            padding: '5px 10px',
+            fontSize: '0.70rem',
             fontWeight: 500,
-            background: '#3B82F6',
-            color: '#FFFFFF',
-            border: 'none',
-            borderRadius: 3,
+            background: 'var(--c-accent-glow)',
+            color: 'var(--c-accent-2)',
+            border: '1px solid var(--c-accent-glow-strong)',
+            borderRadius: 4,
             cursor: 'pointer',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "'IBM Plex Sans', sans-serif",
+            transition: 'background var(--dur-fast)',
           }}
+          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(92,143,248,0.28)'}
+          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--c-accent-glow)'}
         >
           Export
         </button>

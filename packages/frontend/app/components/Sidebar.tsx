@@ -36,8 +36,8 @@ const C = {
   textSec: 'var(--c-text-2)',
   textMut: 'var(--c-text-3)',
   accent:  'var(--c-accent-2)',
-  accentBg:'rgba(59,130,246,0.12)',
-  hover:   'rgba(59,130,246,0.08)',
+  accentBg:'var(--c-accent-glow)',
+  hover:   'var(--c-hover)',
   green:   'var(--c-green)',
   red:     'var(--c-red)',
   yellow:  'var(--c-yellow)',
@@ -60,22 +60,22 @@ function ActivityBtn({ icon, active, label, onClick }: {
       onClick={onClick}
       style={{
         width: '100%',
-        height: 48,
+        height: 44,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         border: 'none',
-        background: 'transparent',
-        color: active ? C.text : C.textMut,
-        borderLeft: active ? `2px solid ${C.accent}` : '2px solid transparent',
+        background: active ? 'var(--c-accent-glow)' : 'transparent',
+        color: active ? 'var(--c-accent-2)' : C.textMut,
+        borderLeft: active ? '2px solid var(--c-accent-2)' : '2px solid transparent',
         cursor: 'pointer',
-        transition: 'color 0.12s, background 0.12s',
+        transition: 'color var(--dur-fast), background var(--dur-fast), border-color var(--dur-fast)',
         position: 'relative',
       }}
       onMouseEnter={(e) => {
         if (!active) {
           (e.currentTarget as HTMLElement).style.color = C.textSec;
-          (e.currentTarget as HTMLElement).style.background = C.hover;
+          (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)';
         }
       }}
       onMouseLeave={(e) => {
@@ -163,7 +163,7 @@ function TreeNode({
           paddingLeft: 10 + depth * 14,
           paddingRight: 10,
           border: 'none',
-          background: dragOver ? 'rgba(59,130,246,0.2)' : isActive ? C.accentBg : 'transparent',
+          background: dragOver ? 'var(--c-accent-glow-strong)' : isActive ? C.accentBg : 'transparent',
           cursor: draggable ? 'grab' : 'pointer',
           position: 'relative',
           transition: 'background 0.1s',
@@ -192,28 +192,30 @@ function TreeNode({
 
         <span style={{
           flex: 1,
-          fontSize: '0.85rem',
-          color: isActive ? C.text : icon === 'video' ? C.textSec : '#8B9AAE',
+          fontSize: '0.73rem',
+          color: isActive ? C.text : icon === 'folder' ? C.textSec : C.textMut,
           fontWeight: isActive ? 500 : 400,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
           textAlign: 'left',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
+          letterSpacing: '-0.005em',
         }}>
           {label}
         </span>
 
         {badge && (
           <span style={{
-            fontSize: '0.7rem',
-            padding: '2px 7px',
-            borderRadius: 4,
-            background: badgeColor ? `${badgeColor}22` : 'rgba(255,255,255,0.06)',
+            fontSize: '0.58rem',
+            padding: '1px 5px',
+            borderRadius: 3,
+            background: badgeColor ? `${badgeColor}1A` : 'rgba(255,255,255,0.06)',
             color: badgeColor ?? C.textMut,
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: "'IBM Plex Mono', monospace",
             fontWeight: 600,
             flexShrink: 0,
+            letterSpacing: '0.02em',
           }}>
             {badge}
           </span>
@@ -222,8 +224,8 @@ function TreeNode({
         {icon === 'video' && (
           <span style={{
             fontSize: '0.65rem', padding: '2px 6px', borderRadius: 3,
-            background: '#E5484D', color: '#fff', fontWeight: 700,
-            letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif',
+            background: 'var(--c-red)', color: '#fff', fontWeight: 700,
+            letterSpacing: '0.06em', fontFamily: "'IBM Plex Sans', sans-serif",
             flexShrink: 0,
           }}>
             LIVE
@@ -249,10 +251,10 @@ function StatChip({ label, value, color }: { label: string; value: string; color
       padding: '8px 0',
       flex: 1,
     }}>
-      <span style={{ fontSize: '0.95rem', fontWeight: 600, color, fontFamily: 'JetBrains Mono, monospace' }}>
+      <span style={{ fontSize: '0.78rem', fontWeight: 600, color, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: '-0.02em' }}>
         {value}
       </span>
-      <span style={{ fontSize: '0.7rem', color: C.textMut, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif' }}>
+      <span style={{ fontSize: '0.58rem', color: C.textMut, textTransform: 'uppercase', letterSpacing: '0.07em', fontFamily: "'IBM Plex Sans', system-ui, sans-serif" }}>
         {label}
       </span>
     </div>
@@ -747,13 +749,16 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
     <div style={{ display: 'flex', flexShrink: 0, height: '100%', position: 'relative' }}>
 
       {/* ── Activity Bar ────────────────────── */}
-      <div style={{
-        width: 48,
+      <div
+        className="vigia-activity-bar"
+        style={{
+        width: 44,
         display: 'flex',
         flexDirection: 'column',
         flexShrink: 0,
         background: C.actBar,
-        borderRight: `1px solid ${C.border}`,
+        borderRight: 'none',
+        boxShadow: 'none',
       }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <ActivityBtn icon={<Globe size={20} />}    active={activeActivity === 'explorer'} label="Geo Explorer" onClick={() => { setActiveActivity('explorer'); onActivityChange?.('explorer'); }} />
@@ -782,17 +787,18 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '0 12px',
-          height: 38,
+          height: 36,
           flexShrink: 0,
           borderBottom: `1px solid ${C.border}`,
+          background: 'rgba(255,255,255,0.01)',
         }}>
           <span style={{
-            fontSize: '0.75rem',
-            color: C.textSec,
+            fontSize: '0.60rem',
+            color: C.textMut,
             fontWeight: 600,
-            letterSpacing: '0.08em',
+            letterSpacing: '0.10em',
             textTransform: 'uppercase',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
           }}>
             {isCollapsed ? '≡' : 'EXPLORER'}
           </span>
@@ -860,7 +866,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                 style={{
                   background: 'transparent', border: 'none', outline: 'none',
                   fontSize: '0.7rem', color: C.textSec,
-                  fontFamily: 'Inter, sans-serif', flex: 1, width: 0,
+                  fontFamily: "'IBM Plex Sans', sans-serif", flex: 1, width: 0,
                 }}
               />
             </div>
@@ -869,9 +875,11 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
 
         {/* ── Stats strip ───────────────────── */}
         {!isCollapsed && (
-          <div style={{
+          <div
+            className="vigia-stats-strip"
+            style={{
             display: 'flex',
-            borderBottom: `1px solid ${C.border}`,
+            borderBottom: 'none',
             flexShrink: 0,
           }}>
             <StatChip label="Hazards" value="7"  color={C.red}    />
@@ -914,7 +922,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                   padding: '10px 16px',
                   color: C.textMut,
                   fontSize: '0.71rem',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
                   fontStyle: 'italic',
                 }}>
                   No sessions yet
@@ -1076,7 +1084,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
           {!isCollapsed && (
             <>
               <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '6px 8px' }} />
-              <div style={{ padding: '2px 10px 4px', fontSize: '0.6rem', color: C.textMut, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>
+              <div style={{ padding: '2px 10px 4px', fontSize: '0.6rem', color: C.textMut, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}>
                 Pinned
               </div>
 
@@ -1097,14 +1105,14 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                   onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
                 >
                   <span style={{ color: C.textMut, flexShrink: 0 }}>{icon}</span>
-                  <span style={{ fontSize: '0.73rem', color: '#5C6B80', flex: 1, textAlign: 'left', fontFamily: 'Inter, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '0.72rem', color: C.textMut, flex: 1, textAlign: 'left', fontFamily: "'IBM Plex Sans', system-ui, sans-serif", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.005em' }}>
                     {label}
                   </span>
                   {badge && (
                     <span style={{
                       fontSize: '0.58rem', padding: '1px 5px', borderRadius: 3,
                       background: 'rgba(255,255,255,0.06)', color: C.textMut,
-                      fontFamily: 'JetBrains Mono, monospace',
+                      fontFamily: "'IBM Plex Mono', monospace",
                     }}>
                       {badge}
                     </span>
@@ -1117,16 +1125,18 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
 
         {/* Footer */}
         {!isCollapsed && (
-          <div style={{
+          <div
+            className="vigia-sidebar-footer"
+            style={{
             padding: '7px 10px',
-            borderTop: `1px solid ${C.border}`,
+            borderTop: 'none',
             display: 'flex',
             alignItems: 'center',
             gap: 6,
             flexShrink: 0,
           }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, flexShrink: 0 }} className="pulse" />
-            <span style={{ fontSize: '0.64rem', color: C.textMut, fontFamily: 'Inter, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: '0.64rem', color: C.textMut, fontFamily: "'IBM Plex Sans', sans-serif", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               Rourkela · India · Online
             </span>
           </div>
@@ -1144,30 +1154,14 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
           setWidth(width < 50 ? DEFAULT_WIDTH : 0);
         }}
         style={{
-          width: 6,
-          background: isDragging ? 'rgba(59,130,246,0.5)' : 'rgba(203,213,225,0.3)',
+          width: 5,
+          background: 'transparent',
           cursor: 'col-resize',
           flexShrink: 0,
-          transition: isDragging ? 'none' : 'background 0.15s',
           position: 'relative',
-          display: width === 0 ? 'none' : 'block', // Hide handle when collapsed
+          display: width === 0 ? 'none' : 'block',
         }}
-        onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.5)'}
-        onMouseLeave={(e) => { if (!isDragging) (e.currentTarget as HTMLElement).style.background = 'rgba(203,213,225,0.3)'; }}
-      >
-        {/* Visual indicator */}
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: 3,
-          height: 40,
-          background: 'rgba(100,116,139,0.4)',
-          borderRadius: 2,
-          pointerEvents: 'none',
-        }} />
-      </div>
+      />
 
       {/* Show expand button when collapsed */}
       {width === 0 && (
@@ -1180,7 +1174,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
             left: 48,
             top: '50%',
             transform: 'translateY(-50%)',
-            background: 'rgba(203,213,225,0.5)',
+            background: 'var(--c-elevated)',
             border: `1px solid ${C.border}`,
             borderRadius: '0 4px 4px 0',
             cursor: 'pointer',
@@ -1190,8 +1184,8 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
             zIndex: 100,
             transition: 'background 0.15s',
           }}
-          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.3)'}
-          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'rgba(203,213,225,0.5)'}
+          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--c-accent-glow)'}
+          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'var(--c-elevated)'}
         >
           <ChevronRight size={16} style={{ color: C.text }} />
         </div>
@@ -1229,7 +1223,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
               alignItems: 'center',
               justifyContent: 'space-between',
             }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: C.text, fontFamily: 'Inter, sans-serif' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: C.text, fontFamily: "'IBM Plex Sans', sans-serif" }}>
                 Select Location
               </span>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1243,7 +1237,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                     fontSize: '0.7rem',
                     padding: '4px 8px',
                     cursor: 'pointer',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "'IBM Plex Sans', sans-serif",
                   }}
                 >
                   {showMap ? 'List' : 'Map'}
@@ -1282,7 +1276,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                   borderRadius: 3,
                   color: C.text,
                   fontSize: '0.8rem',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
                   outline: 'none',
                 }}
               />
@@ -1319,7 +1313,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                         borderRadius: 3,
                         color: C.text,
                         fontSize: '0.8rem',
-                        fontFamily: 'Inter, sans-serif',
+                        fontFamily: "'IBM Plex Sans', sans-serif",
                         textAlign: 'left',
                         cursor: 'pointer',
                         marginBottom: 8,
@@ -1364,7 +1358,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
               justifyContent: 'space-between',
               alignItems: 'center',
             }}>
-              <div style={{ fontSize: '0.7rem', color: C.textMut, fontFamily: 'JetBrains Mono, monospace' }}>
+              <div style={{ fontSize: '0.7rem', color: C.textMut, fontFamily: "'IBM Plex Mono', monospace" }}>
                 {selectedLocation && `${selectedLocation.lat.toFixed(4)}, ${selectedLocation.lon.toFixed(4)}`}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -1383,7 +1377,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                     borderRadius: 3,
                     color: C.text,
                     fontSize: '0.75rem',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "'IBM Plex Sans', sans-serif",
                     cursor: 'pointer',
                   }}
                 >
@@ -1399,7 +1393,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                     borderRadius: 3,
                     color: '#fff',
                     fontSize: '0.75rem',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "'IBM Plex Sans', sans-serif",
                     cursor: selectedLocation ? 'pointer' : 'not-allowed',
                     opacity: selectedLocation ? 1 : 0.5,
                   }}
@@ -1419,13 +1413,14 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
             position: 'fixed',
             top: contextMenu.y,
             left: contextMenu.x,
-            background: C.bg,
-            border: `1px solid ${C.border}`,
-            borderRadius: 4,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            background: 'var(--c-elevated)',
+            border: '1px solid var(--c-border-md)',
+            borderRadius: 6,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)',
             zIndex: 10000,
-            minWidth: 180,
+            minWidth: 190,
             padding: '4px 0',
+            backdropFilter: 'blur(8px)',
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -1443,7 +1438,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                   border: 'none',
                   color: C.text,
                   fontSize: '0.75rem',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
                   textAlign: 'left',
                   cursor: 'pointer',
                   display: 'flex',
@@ -1464,7 +1459,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                   border: 'none',
                   color: C.text,
                   fontSize: '0.75rem',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
                   textAlign: 'left',
                   cursor: 'pointer',
                   display: 'flex',
@@ -1488,7 +1483,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
               border: 'none',
               color: C.red,
               fontSize: '0.75rem',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: "'IBM Plex Sans', sans-serif",
               textAlign: 'left',
               cursor: 'pointer',
               display: 'flex',

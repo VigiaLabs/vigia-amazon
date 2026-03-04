@@ -16,7 +16,7 @@ export function Breadcrumb({ path }: { path: string[] }) {
         <span key={`${seg}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <span style={{
             fontSize: '0.65rem',
-            fontFamily: 'IBM Plex Sans, sans-serif',
+            fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
             color: i === arr.length - 1 ? 'var(--c-text-2)' : 'var(--c-text-3)',
             fontWeight: i === arr.length - 1 ? 500 : 400,
             cursor: i < arr.length - 1 ? 'pointer' : 'default',

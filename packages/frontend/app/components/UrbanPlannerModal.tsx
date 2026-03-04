@@ -14,7 +14,7 @@ const C = {
   overlay: 'rgba(0, 0, 0, 0.7)',
 };
 
-const MONO = "'JetBrains Mono', 'IBM Plex Mono', monospace";
+const MONO = "'IBM Plex Mono', monospace";
 
 interface UrbanPlannerModalProps {
   onClose: () => void;
@@ -286,11 +286,12 @@ export function UrbanPlannerModal({ onClose }: UrbanPlannerModalProps) {
             {error && (
               <div style={{
                 padding: 12,
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
+                background: 'var(--c-red-dim)',
+                border: '1px solid rgba(240,96,108,0.3)',
                 borderRadius: 4,
-                fontSize: '0.85rem',
-                color: '#EF4444',
+                fontSize: '0.76rem',
+                color: 'var(--c-red)',
+                fontFamily: "'IBM Plex Sans', sans-serif",
               }}>
                 {error}
               </div>

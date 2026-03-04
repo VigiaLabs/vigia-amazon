@@ -76,7 +76,6 @@ function ToastItem({ data, onRemove }: { data: ToastData; onRemove: (id: string)
     <div
       className={`toast toast-${data.kind} ${exiting ? 'toast-exit' : ''}`}
       onClick={dismiss}
-      style={{ borderLeftColor: color }}
     >
       {/* Icon */}
       <span style={{ color, flexShrink: 0, marginTop: 1 }}>{icon}</span>
@@ -87,7 +86,7 @@ function ToastItem({ data, onRemove }: { data: ToastData; onRemove: (id: string)
           fontWeight: 500,
           color: 'var(--c-text)',
           fontSize: '0.76rem',
-          fontFamily: 'IBM Plex Sans, sans-serif',
+          fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
           lineHeight: 1.4,
         }}>
           {data.title}
@@ -96,7 +95,7 @@ function ToastItem({ data, onRemove }: { data: ToastData; onRemove: (id: string)
           <div style={{
             color: 'var(--c-text-2)',
             fontSize: '0.68rem',
-            fontFamily: 'IBM Plex Sans, sans-serif',
+            fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
             marginTop: 2,
             lineHeight: 1.5,
           }}>

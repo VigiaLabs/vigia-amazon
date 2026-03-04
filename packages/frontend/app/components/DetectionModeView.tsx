@@ -136,7 +136,7 @@ export function DetectionModeView() {
             fontSize: '0.7rem', 
             fontWeight: 600, 
             color: C.text,
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: "'IBM Plex Mono', monospace",
             textTransform: 'uppercase',
             letterSpacing: '0.05em',
           }}>
@@ -146,7 +146,7 @@ export function DetectionModeView() {
             marginLeft: 8,
             fontSize: '0.6rem',
             color: C.textMut,
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: "'IBM Plex Mono', monospace",
           }}>
             ONNX v26 · 5 FPS
           </span>
@@ -208,7 +208,7 @@ export function DetectionModeView() {
             fontSize: '0.7rem', 
             fontWeight: 600, 
             color: C.text,
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: "'IBM Plex Mono', monospace",
             textTransform: 'uppercase',
             letterSpacing: '0.05em',
           }}>
@@ -218,7 +218,7 @@ export function DetectionModeView() {
             marginLeft: 8,
             fontSize: '0.6rem',
             color: C.textMut,
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: "'IBM Plex Mono', monospace",
           }}>
             Unverified Hazards
           </span>
@@ -229,7 +229,7 @@ export function DetectionModeView() {
             gap: 6,
           }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--c-green)', animation: 'pulse 2s infinite' }} />
-            <span style={{ fontSize: '0.6rem', color: 'var(--c-green)', fontFamily: 'JetBrains Mono, monospace' }}>
+            <span style={{ fontSize: '0.6rem', color: 'var(--c-green)', fontFamily: "'IBM Plex Mono', monospace" }}>
               LIVE
             </span>
           </div>

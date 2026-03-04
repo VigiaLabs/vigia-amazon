@@ -56,7 +56,7 @@ function getMapStyle(style: MapStyle): string | maplibregl.StyleSpecification {
   return OSM_STYLE as any;
 }
 
-const MONO = "'JetBrains Mono', 'IBM Plex Mono', monospace";
+const MONO = "'IBM Plex Mono', monospace";
 const SANS = "'IBM Plex Sans', sans-serif";
 
 const C = {

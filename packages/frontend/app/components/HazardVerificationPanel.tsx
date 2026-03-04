@@ -279,14 +279,14 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
           fontWeight: 600,
           letterSpacing: '0.1em',
           textTransform: 'uppercase',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: "'IBM Plex Sans', sans-serif",
         }}>
           VERIFICATION PIPELINE
         </span>
         <span style={{
           fontSize: '0.6rem',
           color: C.textSec,
-          fontFamily: 'JetBrains Mono, monospace',
+          fontFamily: "'IBM Plex Mono', monospace",
         }}>
           {hazards.length} active
         </span>
@@ -311,14 +311,14 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
             <AlertTriangle size={32} style={{ opacity: 0.3 }} />
             <div style={{
               fontSize: '0.75rem',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: "'IBM Plex Sans', sans-serif",
               textAlign: 'center',
             }}>
               No hazards detected yet
             </div>
             <div style={{
               fontSize: '0.65rem',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: "'IBM Plex Sans', sans-serif",
               textAlign: 'center',
               maxWidth: 200,
             }}>
@@ -381,7 +381,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                       <div style={{
                         fontSize: '0.72rem',
                         color: C.text,
-                        fontFamily: 'Inter, sans-serif',
+                        fontFamily: "'IBM Plex Sans', sans-serif",
                         fontWeight: 500,
                       }}>
                         {hazard.type}
@@ -389,7 +389,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                       <div style={{
                         fontSize: '0.62rem',
                         color: C.textMut,
-                        fontFamily: 'JetBrains Mono, monospace',
+                        fontFamily: "'IBM Plex Mono', monospace",
                       }}>
                         {hazard.lat.toFixed(4)}, {hazard.lon.toFixed(4)}
                       </div>
@@ -402,7 +402,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                       borderRadius: 3,
                       background: `${statusConfig.color}22`,
                       color: statusConfig.color,
-                      fontFamily: 'JetBrains Mono, monospace',
+                      fontFamily: "'IBM Plex Mono', monospace",
                       fontWeight: 600,
                       flexShrink: 0,
                     }}>
@@ -422,7 +422,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
                         flexDirection: 'column',
                         gap: 6,
                         fontSize: '0.65rem',
-                        fontFamily: 'JetBrains Mono, monospace',
+                        fontFamily: "'IBM Plex Mono', monospace",
                       }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           <span style={{ color: C.textMut }}>Confidence:</span>
@@ -501,7 +501,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
             fontSize: '0.78rem',
             fontWeight: 600,
             color: C.yellow,
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: "'IBM Plex Mono', monospace",
           }}>
             {hazards.filter(h => h.status === 'pending' || h.status === 'unverified').length}
           </span>
@@ -510,7 +510,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
             color: C.textMut,
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "'IBM Plex Sans', sans-serif",
           }}>
             PENDING
           </span>
@@ -527,7 +527,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
             fontSize: '0.78rem',
             fontWeight: 600,
             color: C.accent,
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: "'IBM Plex Mono', monospace",
           }}>
             {hazards.filter(h => h.status === 'verifying').length}
           </span>
@@ -536,7 +536,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
             color: C.textMut,
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "'IBM Plex Sans', sans-serif",
           }}>
             VERIFYING
           </span>
@@ -552,7 +552,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
             fontSize: '0.78rem',
             fontWeight: 600,
             color: C.green,
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: "'IBM Plex Mono', monospace",
           }}>
             {hazards.filter(h => h.status === 'verified').length}
           </span>
@@ -561,7 +561,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
             color: C.textMut,
             textTransform: 'uppercase',
             letterSpacing: '0.06em',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "'IBM Plex Sans', sans-serif",
           }}>
             VERIFIED
           </span>
@@ -591,7 +591,7 @@ export function HazardVerificationPanel({ onHazardDetected }: HazardVerification
             padding: '4px 10px 5px',
             fontSize: '0.58rem',
             color: 'var(--c-text-3)',
-            fontFamily: "'JetBrains Mono', monospace",
+            fontFamily: "'IBM Plex Mono', monospace",
             letterSpacing: '0.07em',
             textTransform: 'uppercase',
             borderBottom: '1px solid var(--c-border)',

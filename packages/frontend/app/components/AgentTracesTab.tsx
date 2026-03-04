@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useAgentTraceStore } from '@/stores/agentTraceStore';
 import type { ReActStep, ReActTrace } from '@/types/shared';
 
-const MONO = "'JetBrains Mono', 'IBM Plex Mono', monospace";
+const MONO = "'IBM Plex Mono', monospace";
 const SANS = "'IBM Plex Sans', sans-serif";
 
 // ── Step sub-components ──────────────────────────────────────
