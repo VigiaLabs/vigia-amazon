@@ -38,7 +38,7 @@ export function MaintenancePanel() {
     text: 'var(--c-text)',
     textSec: 'var(--c-text-2)',
     textMut: 'var(--c-text-3)',
-    hover: 'rgba(59,130,246,0.08)',
+    hover: 'var(--c-accent-glow)',
   };
 
   return (
@@ -71,7 +71,7 @@ export function MaintenancePanel() {
               Report Hazard for Maintenance
             </div>
             
-            <div style={{ fontSize: '0.65rem', color: C.textMut, fontFamily: 'JetBrains Mono, monospace' }}>
+            <div style={{ fontSize: '0.65rem', color: C.textMut, fontFamily: "'IBM Plex Mono', monospace" }}>
               <div>ID: {selectedHazard.id}</div>
               <div>Type: {selectedHazard.type}</div>
               <div>Severity: {selectedHazard.severity}/5</div>
@@ -89,7 +89,7 @@ export function MaintenancePanel() {
                 padding: 8,
                 fontSize: '0.7rem',
                 color: C.text,
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "'IBM Plex Sans', sans-serif",
                 resize: 'vertical',
                 minHeight: 60,
               }}
@@ -103,10 +103,10 @@ export function MaintenancePanel() {
                 style={{
                   padding: '6px 12px',
                   fontSize: '0.7rem',
-                  background: 'rgba(59,130,246,0.15)',
-                  border: `1px solid rgba(59,130,246,0.3)`,
+                  background: 'var(--c-accent-glow)',
+                  border: `1px solid var(--c-accent-glow-strong)`,
                   borderRadius: 3,
-                  color: '#3B82F6',
+                  color: 'var(--c-accent-2)',
                   cursor: isLoading ? 'not-allowed' : 'pointer',
                   opacity: isLoading ? 0.5 : 1,
                 }}
@@ -151,7 +151,7 @@ export function MaintenancePanel() {
                 border: `1px solid ${C.border}`,
                 borderRadius: 3,
                 fontSize: '0.65rem',
-                fontFamily: 'JetBrains Mono, monospace',
+                fontFamily: "'IBM Plex Mono', monospace",
               }}
             >
               <div style={{ color: C.text }}>{report.type} - ${report.estimatedCost}</div>

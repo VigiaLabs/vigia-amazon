@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronRight, ChevronDown, Folder, FolderOpen, File, CheckCircle, AlertTriangle, Archive } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, FolderOpen, File, CheckCircle, AlertTriangle, Archive, Clock } from 'lucide-react';
 
 export interface TreeNode {
   id: string;
@@ -22,13 +22,14 @@ interface TreeNodeProps {
   onContextMenu?: (nodeId: string, event: React.MouseEvent) => void;
 }
 
+const FONT_UI   = "'IBM Plex Sans', system-ui, sans-serif";
+const FONT_MONO = "'IBM Plex Mono', monospace";
+
 export function TreeNodeComponent({ node, selected, expanded, onExpand, onSelect, onContextMenu }: TreeNodeProps) {
   const hasChildren = node.children && node.children.length > 0;
 
   const handleClick = () => {
-    if (hasChildren) {
-      onExpand(node.id);
-    }
+    if (hasChildren) onExpand(node.id);
     onSelect(node.id);
   };
 
@@ -37,19 +38,34 @@ export function TreeNodeComponent({ node, selected, expanded, onExpand, onSelect
     onContextMenu?.(node.id, e);
   };
 
-  const getStatusIcon = () => {
+  const getIcon = () => {
     if (node.type === 'folder') {
-      return expanded ? <FolderOpen className="w-3 h-3" /> : <Folder className="w-3 h-3" />;
+      return expanded
+        ? <FolderOpen size={13} style={{ color: 'var(--c-text-2)', flexShrink: 0 }} />
+        : <Folder     size={13} style={{ color: 'var(--c-text-3)', flexShrink: 0 }} />;
     }
-    
     switch (node.status) {
-      case 'finalized':
-        return <CheckCircle className="w-3 h-3 text-green-600" />;
-      case 'archived':
-        return <Archive className="w-3 h-3 text-ide-text-tertiary" />;
-      default:
-        return <File className="w-3 h-3" />;
+      case 'finalized': return <CheckCircle size={13} style={{ color: 'var(--c-green)',  flexShrink: 0 }} />;
+      case 'archived':  return <Archive     size={13} style={{ color: 'var(--c-text-3)', flexShrink: 0 }} />;
+      default:          return <Clock       size={13} style={{ color: 'var(--c-accent-2)', flexShrink: 0 }} />;
     }
+  };
+
+  const rowStyle: React.CSSProperties = {
+    position: 'relative',
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    height: 26,
+    paddingLeft: 8 + node.depth * 14,
+    paddingRight: 8,
+    border: 'none',
+    borderRadius: 4,
+    background: selected ? 'var(--c-accent-glow)' : 'transparent',
+    cursor: 'pointer',
+    transition: 'background 0.1s',
+    fontFamily: FONT_UI,
   };
 
   return (
@@ -57,27 +73,72 @@ export function TreeNodeComponent({ node, selected, expanded, onExpand, onSelect
       <button
         onClick={handleClick}
         onContextMenu={handleContextMenu}
-        className={`w-full flex items-center gap-2 px-2 py-1 text-xs rounded transition-colors ${
-          selected 
-            ? 'bg-ide-hover border-l-2 border-ide-text' 
-            : 'hover:bg-ide-hover'
-        }`}
-        style={{ paddingLeft: `${8 + node.depth * 16}px` }}
+        style={rowStyle}
+        onMouseEnter={(e) => {
+          if (!selected) (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)';
+        }}
+        onMouseLeave={(e) => {
+          if (!selected) (e.currentTarget as HTMLElement).style.background = 'transparent';
+        }}
       >
-        {hasChildren && (
-          expanded ? (
-            <ChevronDown className="w-3 h-3 text-ide-text-secondary flex-shrink-0" />
-          ) : (
-            <ChevronRight className="w-3 h-3 text-ide-text-secondary flex-shrink-0" />
-          )
+        {/* Active accent line */}
+        {selected && (
+          <span style={{
+            position: 'absolute', left: 0, top: 3, bottom: 3,
+            width: 2, borderRadius: 1,
+            background: 'var(--c-accent-2)',
+          }} />
         )}
-        <span className="text-ide-text-secondary flex-shrink-0">
-          {getStatusIcon()}
+
+        {/* Chevron */}
+        <span style={{ width: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {hasChildren
+            ? (expanded
+              ? <ChevronDown  size={11} style={{ color: 'var(--c-text-3)' }} />
+              : <ChevronRight size={11} style={{ color: 'var(--c-text-3)' }} />)
+            : null}
         </span>
-        <span className="text-ide-text truncate font-ui">{node.label}</span>
+
+        {/* Icon */}
+        {getIcon()}
+
+        {/* Label */}
+        <span style={{
+          flex: 1,
+          fontSize: '0.76rem',
+          fontFamily: node.type === 'file' ? FONT_MONO : FONT_UI,
+          color: selected
+            ? 'var(--c-text)'
+            : node.type === 'folder'
+              ? 'var(--c-text)'
+              : 'var(--c-text-2)',
+          fontWeight: node.type === 'folder' ? 500 : 400,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          textAlign: 'left',
+          letterSpacing: node.type === 'folder' ? '-0.01em' : '0',
+        }}>
+          {node.label}
+        </span>
+
+        {/* Status badge for files */}
+        {node.type === 'file' && node.status === 'finalized' && (
+          <span style={{
+            fontSize: '0.56rem', fontWeight: 600, letterSpacing: '0.06em',
+            textTransform: 'uppercase', color: 'var(--c-green)',
+            background: 'var(--c-green-dim)', border: '1px solid rgba(52,212,146,0.25)',
+            borderRadius: 3, padding: '1px 4px', flexShrink: 0,
+            fontFamily: FONT_UI,
+          }}>
+            OK
+          </span>
+        )}
       </button>
+
+      {/* Children — animated */}
       {expanded && hasChildren && (
-        <div>
+        <div className="tree-child-enter">
           {node.children!.map((child) => (
             <TreeNodeComponent
               key={child.id}

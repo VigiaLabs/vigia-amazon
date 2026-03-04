@@ -2,23 +2,27 @@
 
 import { User, CheckCircle, AlertTriangle, Cpu, Wifi, Activity } from 'lucide-react';
 
+const FONT_UI   = "'IBM Plex Sans', system-ui, sans-serif";
+const FONT_MONO = "'IBM Plex Mono', monospace";
+
 function StatusItem({ children, borderLeft = true, accentBg = false }: {
   children: React.ReactNode; borderLeft?: boolean; accentBg?: boolean;
 }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 6,
-      padding: '0 11px', height: '100%', flexShrink: 0,
+      display: 'flex', alignItems: 'center', gap: 5,
+      padding: '0 10px', height: '100%', flexShrink: 0,
       borderLeft: borderLeft ? '1px solid var(--c-border)' : undefined,
       background: accentBg ? 'var(--c-accent)' : 'transparent',
+      transition: 'background var(--dur-fast)',
     }}>
       {children}
     </div>
   );
 }
 
-const S = { fontSize: '0.64rem', fontFamily: 'IBM Plex Sans, sans-serif', color: 'var(--c-text-2)' } as const;
-const M = { fontSize: '0.64rem', fontFamily: 'IBM Plex Mono, monospace',  color: 'var(--c-text-2)' } as const;
+const S = { fontSize: '0.62rem', fontFamily: FONT_UI,   color: 'var(--c-text-2)' } as const;
+const M = { fontSize: '0.62rem', fontFamily: FONT_MONO, color: 'var(--c-text-2)' } as const;
 
 export function StatusBar() {
   return (
@@ -27,11 +31,12 @@ export function StatusBar() {
       height: 24, flexShrink: 0, userSelect: 'none',
       background: 'var(--c-deep)',
       borderTop: '1px solid var(--c-border)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
         <StatusItem borderLeft={false} accentBg>
           <User size={10} style={{ color: '#fff' }} />
-          <span style={{ ...S, color: '#fff', fontWeight: 500 }}>user</span>
+          <span style={{ ...S, color: '#fff', fontWeight: 600 }}>user</span>
         </StatusItem>
         <StatusItem>
           <CheckCircle size={10} style={{ color: 'var(--c-green)' }} />

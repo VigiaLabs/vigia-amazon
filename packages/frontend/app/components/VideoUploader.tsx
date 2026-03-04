@@ -38,7 +38,7 @@ const C = {
   yellow:   'var(--c-yellow)',
 };
 
-const FONT = "'JetBrains Mono', 'Fira Code', 'Consolas', monospace";
+const FONT = "'IBM Plex Mono', monospace";
 
 // ─────────────────────────────────────────────
 // Simple Geohash Encoder (7 chars precision)
@@ -431,7 +431,7 @@ export function VideoUploader() {
 
       // Label
       const label = `POTHOLE  ${(currentDetection.confidence * 100).toFixed(0)}%`;
-      ctx.font = '9px JetBrains Mono, Consolas, monospace';
+      ctx.font = "9px 'IBM Plex Mono', monospace";
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = '#2B2D30';
       ctx.fillRect(x1, y1 - 16, tw + 8, 14);

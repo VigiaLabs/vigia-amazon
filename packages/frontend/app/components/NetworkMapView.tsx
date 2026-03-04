@@ -20,7 +20,7 @@ const C = {
 };
 
 const FONT = "'IBM Plex Sans', sans-serif";
-const MONO = "'JetBrains Mono', monospace";
+const MONO = "'IBM Plex Mono', monospace";
 
 // Resolve accent color for MapLibre (which can't use CSS vars)
 const getAccentHex = (theme: string) =>

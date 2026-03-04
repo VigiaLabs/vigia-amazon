@@ -4,7 +4,7 @@ import { useRef, useState, useEffect } from 'react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MONO = "'JetBrains Mono', 'IBM Plex Mono', monospace";
+const MONO = "'IBM Plex Mono', monospace";
 const DEFAULT_WIDTH = 300;
 const MIN_OPEN_WIDTH = 200;
 const MAX_WIDTH = 500;

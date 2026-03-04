@@ -41,10 +41,10 @@ export function FolderItem({
   }
 
   function renderIcon() {
-    if (icon === 'video') return <Video size={12} style={{ color: '#3B82F6', flexShrink: 0 }} />;
-    if (icon === 'file')  return <FileText size={12} style={{ color: '#4B5563', flexShrink: 0 }} />;
-    if (expanded)         return <FolderOpen size={12} style={{ color: '#8B95A1', flexShrink: 0 }} />;
-    return <Folder size={12} style={{ color: '#4B5563', flexShrink: 0 }} />;
+    if (icon === 'video') return <Video size={12} style={{ color: 'var(--c-accent-2)', flexShrink: 0 }} />;
+    if (icon === 'file')  return <FileText size={12} style={{ color: 'var(--c-text-3)', flexShrink: 0 }} />;
+    if (expanded)         return <FolderOpen size={12} style={{ color: 'var(--c-text-2)', flexShrink: 0 }} />;
+    return <Folder size={12} style={{ color: 'var(--c-text-3)', flexShrink: 0 }} />;
   }
 
   return (
@@ -54,7 +54,7 @@ export function FolderItem({
         className="w-full flex items-center gap-1.5 h-7 text-left relative transition-colors group"
         style={{
           paddingLeft,
-          background: isActive ? 'rgba(37,99,235,0.14)' : undefined,
+          background: isActive ? 'var(--c-accent-glow)' : undefined,
         }}
         onMouseEnter={(e) => {
           if (!isActive) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
@@ -67,7 +67,7 @@ export function FolderItem({
         {isActive && (
           <span
             className="absolute left-0 top-0 bottom-0 w-0.5"
-            style={{ background: '#3B82F6' }}
+            style={{ background: 'var(--c-accent-2)' }}
           />
         )}
 
@@ -85,7 +85,7 @@ export function FolderItem({
         <span
           style={{
             fontSize: '0.76rem',
-            color: isActive ? '#E2E8F0' : icon === 'video' ? '#8B95A1' : '#6B7280',
+            color: isActive ? 'var(--c-text)' : icon === 'video' ? 'var(--c-text-2)' : 'var(--c-text-2)',
             fontWeight: isActive ? 500 : 400,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -99,13 +99,14 @@ export function FolderItem({
         {/* Live badge for video */}
         {icon === 'video' && (
           <span
-            className="mr-2 px-1 rounded text-white flex-shrink-0"
+            className="mr-2 px-1 rounded flex-shrink-0"
             style={{
               fontSize: '0.55rem',
-              background: '#EF4444',
+              background: 'var(--c-red)',
+              color: '#fff',
               fontWeight: 600,
               letterSpacing: '0.04em',
-              fontFamily: 'JetBrains Mono, monospace',
+              fontFamily: "'IBM Plex Mono', monospace",
             }}
           >
             LIVE

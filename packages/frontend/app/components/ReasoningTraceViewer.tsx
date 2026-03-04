@@ -9,7 +9,7 @@ import { useAgentTraceStore } from '../../stores/agentTraceStore';
 // Visual layer: Copilot agent-thinking style
 // ─────────────────────────────────────────────
 
-const MONO = "'JetBrains Mono', 'IBM Plex Mono', monospace";
+const MONO = "'IBM Plex Mono', monospace";
 
 type ReasoningTrace = {
   traceId: string;

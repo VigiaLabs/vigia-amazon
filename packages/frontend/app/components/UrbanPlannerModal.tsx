@@ -14,7 +14,7 @@ const C = {
   overlay: 'rgba(0, 0, 0, 0.7)',
 };
 
-const MONO = "'JetBrains Mono', 'IBM Plex Mono', monospace";
+const MONO = "'IBM Plex Mono', monospace";
 
 interface UrbanPlannerModalProps {
   onClose: () => void;

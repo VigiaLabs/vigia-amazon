@@ -333,9 +333,11 @@ export default function Dashboard() {
     borderRight: '1px solid var(--c-border)',
     background: active ? 'var(--c-panel)' : 'transparent',
     color: active ? 'var(--c-text)' : 'var(--c-text-3)',
-    fontSize: '0.76rem', fontWeight: active ? 500 : 400,
-    fontFamily: 'IBM Plex Sans, sans-serif',
-    transition: 'background 0.12s, color 0.12s',
+    fontSize: '0.75rem', fontWeight: active ? 500 : 400,
+    fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
+    letterSpacing: active ? '-0.01em' : '0',
+    transition: 'background var(--dur-fast), color var(--dur-fast)',
+    boxShadow: active ? 'inset 0 -1px 0 var(--c-panel)' : 'none',
   });
 
   return (
@@ -406,6 +408,7 @@ export default function Dashboard() {
             display: 'flex', alignItems: 'flex-end', height: 36, flexShrink: 0,
             background: 'var(--c-sidebar)', borderBottom: '1px solid var(--c-border)',
             overflowX: 'auto', overflowY: 'hidden',
+            boxShadow: '0 1px 0 rgba(0,0,0,0.2)',
           }}>
             {openTabs.map((tab) => {
               const active = activeMainTab === tab.id;
@@ -458,14 +461,30 @@ export default function Dashboard() {
             ) : !activeMainTab ? (
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                height: '100%', flexDirection: 'column', gap: 14,
+                height: '100%', flexDirection: 'column', gap: 16,
                 background: 'var(--c-bg)',
               }}>
-                <MapPin size={48} style={{ color: 'var(--c-text-3)', opacity: 0.2 }} />
-                <div style={{ fontSize: '1rem', color: 'var(--c-text-2)', fontFamily: 'IBM Plex Sans, sans-serif', fontWeight: 600 }}>
+                <div style={{
+                  width: 56, height: 56, borderRadius: 16,
+                  background: 'var(--c-accent-glow)',
+                  border: '1px solid var(--c-border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 0 32px var(--c-accent-glow)',
+                }}>
+                  <MapPin size={24} style={{ color: 'var(--c-text-3)', opacity: 0.5 }} />
+                </div>
+                <div style={{
+                  fontSize: '0.88rem', color: 'var(--c-text-2)',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
+                  fontWeight: 500, letterSpacing: '-0.02em',
+                }}>
                   {sidebarActivity === 'explorer' ? 'Explore Road Infrastructure' : 'Real-Time Hazard Detection'}
                 </div>
-                <div style={{ fontSize: '0.76rem', color: 'var(--c-text-3)', fontFamily: 'IBM Plex Sans, sans-serif', textAlign: 'center', maxWidth: 360, lineHeight: 1.6 }}>
+                <div style={{
+                  fontSize: '0.73rem', color: 'var(--c-text-3)',
+                  fontFamily: "'IBM Plex Sans', sans-serif",
+                  textAlign: 'center', maxWidth: 320, lineHeight: 1.7,
+                }}>
                   {sidebarActivity === 'explorer'
                     ? 'Select a session from the explorer or create a new one'
                     : 'Click Detection Node to upload dashcam footage'}
@@ -506,7 +525,7 @@ export default function Dashboard() {
                   borderTop: '2px solid var(--c-rose)',
                   animation: 'spin 0.9s linear infinite',
                 }} />
-                <div style={{ fontSize: '0.78rem', color: 'var(--c-text-2)', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--c-text-2)', fontFamily: "'IBM Plex Sans', system-ui, sans-serif" }}>
                   Creating session at {selectedSession.location?.name}...
                 </div>
               </div>
@@ -519,7 +538,7 @@ export default function Dashboard() {
                     <div style={{
                       position: 'absolute', top: 8, left: 8, zIndex: 10,
                       background: 'rgba(0,0,0,0.8)', padding: '4px 8px', borderRadius: 3,
-                      fontSize: '0.68rem', color: '#fff', fontFamily: 'IBM Plex Sans, sans-serif',
+                      fontSize: '0.68rem', color: '#fff', fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
                       border: '1px solid var(--c-rose-border)',
                     }}>
                       {s.location?.city || 'Session'} — {new Date(s.timestamp).toLocaleDateString()}
@@ -531,7 +550,7 @@ export default function Dashboard() {
                   position: 'absolute', top: 8, right: 8, zIndex: 20,
                   background: 'var(--c-elevated)', border: '1px solid var(--c-rose-border)',
                   borderRadius: 3, padding: '4px 10px', color: 'var(--c-rose-2)',
-                  fontSize: '0.70rem', cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif',
+                  fontSize: '0.70rem', cursor: 'pointer', fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
                 }}>
                   Close Split
                 </button>
@@ -564,7 +583,7 @@ export default function Dashboard() {
                     style={{
                       ...tabBtn(active),
                       fontSize: '0.60rem',
-                      letterSpacing: '0.09em',
+                      letterSpacing: '0.08em',
                       textTransform: 'uppercase',
                       fontWeight: active ? 600 : 500,
                       gap: 6,

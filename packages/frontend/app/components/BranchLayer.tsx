@@ -103,35 +103,66 @@ export function BranchLayer({ map }: { map: maplibregl.Map | null }) {
 
   return (
     <>
-      <div className="absolute top-4 left-4 bg-white border border-[#CBD5E1] rounded p-3 shadow-lg z-10">
-        <div className="text-xs font-medium mb-2 flex items-center gap-2">
-          <span style={{ fontSize: '0.65rem', color: '#22c55e', fontFamily: 'monospace' }}>⎇</span>
-          <span>BRANCH: {activeBranch.branchName}</span>
+      <div style={{
+        position: 'absolute', top: 16, left: 16, zIndex: 10,
+        background: 'var(--c-elevated)',
+        border: '1px solid var(--c-border-md)',
+        borderRadius: 6, padding: 12,
+        boxShadow: 'var(--shadow-md)',
+        fontFamily: "'IBM Plex Sans', sans-serif",
+        minWidth: 180,
+      }}>
+        <div style={{ fontSize: '0.72rem', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--c-text)' }}>
+          <span style={{ fontSize: '0.65rem', color: 'var(--c-green)', fontFamily: "'IBM Plex Mono', monospace" }}>⎇</span>
+          <span>Branch: {activeBranch.branchName}</span>
         </div>
-        <div className="text-xs text-gray-600 mb-2">
-          <div>Added: {activeBranch.simulatedChanges.addedHazards.length}</div>
-          <div>Removed: {activeBranch.simulatedChanges.removedHazards.length}</div>
+        <div style={{ fontSize: '0.70rem', color: 'var(--c-text-2)', display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
+          <div>Added: <span style={{ color: 'var(--c-text)' }}>{activeBranch.simulatedChanges.addedHazards.length}</span></div>
+          <div>Removed: <span style={{ color: 'var(--c-text)' }}>{activeBranch.simulatedChanges.removedHazards.length}</span></div>
         </div>
         <button
           onClick={handleRecomputeRoutes}
           disabled={isComputing}
-          className="text-xs px-2 py-1 bg-white border border-[#CBD5E1] rounded hover:bg-gray-50 disabled:opacity-50 w-full"
+          style={{
+            width: '100%', padding: '5px 0', fontSize: '0.70rem',
+            background: isComputing ? 'var(--c-hover)' : 'var(--c-accent-glow)',
+            border: '1px solid var(--c-border)',
+            borderRadius: 4, cursor: isComputing ? 'not-allowed' : 'pointer',
+            color: isComputing ? 'var(--c-text-3)' : 'var(--c-accent-2)',
+            opacity: isComputing ? 0.6 : 1,
+            fontFamily: "'IBM Plex Sans', sans-serif",
+            transition: 'background var(--dur-fast)',
+          }}
         >
-          {isComputing ? 'Computing...' : 'Recompute Routes'}
+          {isComputing ? 'Computing…' : 'Recompute Routes'}
         </button>
       </div>
 
       {routingResults && (
-        <div className="absolute top-32 left-4 bg-white border border-[#CBD5E1] rounded p-3 shadow-lg z-10">
-          <div className="text-xs font-medium mb-2">LATENCY COMPARISON</div>
-          <div className="text-xs space-y-1">
-            <div>Baseline: {routingResults.baselineAvgLatency.toFixed(1)}s avg</div>
-            <div>Branch: {routingResults.branchAvgLatency.toFixed(1)}s avg</div>
-            <div className="font-medium">
-              Delta: {routingResults.branchAvgLatency > routingResults.baselineAvgLatency ? '+' : ''}
-              {((routingResults.branchAvgLatency - routingResults.baselineAvgLatency) / routingResults.baselineAvgLatency * 100).toFixed(1)}%
+        <div style={{
+          position: 'absolute', top: 160, left: 16, zIndex: 10,
+          background: 'var(--c-elevated)',
+          border: '1px solid var(--c-border-md)',
+          borderRadius: 6, padding: 12,
+          boxShadow: 'var(--shadow-md)',
+          fontFamily: "'IBM Plex Sans', sans-serif",
+          minWidth: 180,
+        }}>
+          <div style={{ fontSize: '0.60rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--c-text-3)', marginBottom: 8 }}>Latency Comparison</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--c-text-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div>Baseline: <span style={{ color: 'var(--c-text)', fontFamily: "'IBM Plex Mono', monospace" }}>{routingResults.baselineAvgLatency.toFixed(1)}s</span></div>
+            <div>Branch: <span style={{ color: 'var(--c-text)', fontFamily: "'IBM Plex Mono', monospace" }}>{routingResults.branchAvgLatency.toFixed(1)}s</span></div>
+            <div style={{ marginTop: 2 }}>
+              Delta:{' '}
+              <span style={{
+                fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600,
+                color: routingResults.branchAvgLatency > routingResults.baselineAvgLatency ? 'var(--c-red)' : 'var(--c-green)',
+              }}>
+                {routingResults.branchAvgLatency > routingResults.baselineAvgLatency ? '+' : ''}
+                {((routingResults.branchAvgLatency - routingResults.baselineAvgLatency) / routingResults.baselineAvgLatency * 100).toFixed(1)}%
+              </span>
             </div>
-            <div className="text-gray-600">Affected Routes: {routingResults.affectedRoutes}</div>
+            <div style={{ color: 'var(--c-text-3)' }}>Affected: {routingResults.affectedRoutes}</div>
           </div>
         </div>
       )}
