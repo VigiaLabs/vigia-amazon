@@ -21,5 +21,7 @@ applications:
         paths:
           # Workspace root node_modules (hoisted deps including AWS SDK)
           - ../../node_modules/**/*
+          # Frontend node_modules (if any local deps)
+          - node_modules/**/*
           # Next.js build cache
           - .next/cache/**/*

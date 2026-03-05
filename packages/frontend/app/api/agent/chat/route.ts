@@ -15,15 +15,21 @@ export async function POST(req: NextRequest) {
     const agentAliasId = process.env.NEXT_PUBLIC_BEDROCK_AGENT_ALIAS_ID;
     const region = process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1';
 
+    console.log('[agent/chat] Config:', { agentId, agentAliasId, region, hasCustomCreds: !!process.env.BEDROCK_ACCESS_KEY_ID });
+
     if (!agentId || !agentAliasId) {
       return NextResponse.json(
-        { error: 'Bedrock Agent not configured' },
+        { error: 'Bedrock Agent not configured', agentId, agentAliasId },
         { status: 503 }
       );
     }
 
     const client = new BedrockAgentRuntimeClient({ 
       region,
+      credentials: process.env.BEDROCK_ACCESS_KEY_ID ? {
+        accessKeyId: process.env.BEDROCK_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.BEDROCK_SECRET_ACCESS_KEY!,
+      } : undefined,
       requestHandler: {
         requestTimeout: 60000, // Increase to 60 seconds for complex queries
       } as any
@@ -80,7 +86,9 @@ export async function POST(req: NextRequest) {
       enableTrace: true, // Enable trace events
     });
 
+    console.log('[agent/chat] Invoking agent with sessionId:', command.input.sessionId);
     const response = await client.send(command);
+    console.log('[agent/chat] Agent response received');
 
     let completion = '';
     const traces: any[] = [];
@@ -120,6 +128,23 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error('[agent/chat] Error:', err);
+    console.error('[agent/chat] Error details:', {
+      name: err.name,
+      message: err.message,
+      code: err.code,
+      statusCode: err.$metadata?.httpStatusCode,
+    });
+    
+    // Check for credential errors
+    if (err.name === 'CredentialsProviderError' || err.message?.includes('credentials')) {
+      return NextResponse.json(
+        { 
+          error: 'AWS credentials not configured in Amplify. Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to environment variables.',
+          details: err.message
+        },
+        { status: 500 }
+      );
+    }
     
     if (err.message?.includes('timeout') || err.message?.includes('Timeout')) {
       return NextResponse.json(
@@ -132,7 +157,7 @@ export async function POST(req: NextRequest) {
     }
     
     return NextResponse.json(
-      { error: err.message || 'Agent invocation failed' },
+      { error: err.message || 'Agent invocation failed', details: err.name },
       { status: 500 }
     );
   }
