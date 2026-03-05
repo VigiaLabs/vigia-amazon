@@ -756,7 +756,6 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
         flexDirection: 'column',
         overflow: 'hidden',
         background: 'var(--v-panel-bg)',
-        borderRight: '1px solid var(--v-panel-border)',
         transition: isDragging ? 'none' : undefined,
       }}>
 
@@ -800,9 +799,9 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
         {/* ── Stats cards ──────────────── */}
         {!isCollapsed && (
           <div className="vigia-stats-strip">
-            <StatCard label="Hazards"  value="7"  color={C.yellow} />
-            <StatCard label="Verified" value="6"  color={C.green}  />
-            <StatCard label="Nodes"    value="48" color={C.blue}   />
+            <StatCard label="Hazards"  value="7"  color={C.accent} />
+            <StatCard label="Verified" value="6"  color={C.accent} />
+            <StatCard label="Nodes"    value="48" color={C.accent} />
           </div>
         )}
 
@@ -978,8 +977,8 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
 
               {[
                 { icon: <Navigation size={13} />,                                         label: 'Route Library',  badge: undefined,  badgeBg: undefined,             badgeColor: undefined },
-                { icon: <AlertTriangle size={13} style={{ color: C.red }} />,              label: 'Active Hazards', badge: '7',         badgeBg: 'rgba(248,113,113,0.14)', badgeColor: C.red   },
-                { icon: <Activity size={13} style={{ color: C.blue }} />,                  label: 'Swarm Monitor',  badge: '48',        badgeBg: 'rgba(96,165,250,0.13)', badgeColor: C.blue  },
+                { icon: <AlertTriangle size={13} style={{ color: C.accent }} />,           label: 'Active Hazards', badge: '7',         badgeBg: C.accentBg,               badgeColor: C.accent },
+                { icon: <Activity size={13} style={{ color: C.accent }} />,                label: 'Swarm Monitor',  badge: '48',        badgeBg: C.accentBg,               badgeColor: C.accent },
                 { icon: <MapPin size={13} style={{ color: C.textMut }} />,                 label: 'Rourkela Zone',  badge: undefined,  badgeBg: undefined,             badgeColor: undefined },
               ].map(({ icon, label, badge, badgeBg, badgeColor }) => (
                 <button key={label} className="exp-pinned-btn">
@@ -1030,7 +1029,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
           setWidth(width < 50 ? DEFAULT_WIDTH : 0);
         }}
         style={{
-          width: 5,
+          width: 1,
           background: 'transparent',
           cursor: 'col-resize',
           flexShrink: 0,

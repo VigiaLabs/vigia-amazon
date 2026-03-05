@@ -23,12 +23,14 @@ import { MaintenancePanel }     from './components/MaintenancePanelIntegrated';
 import { AgentChatPanel }       from './components/AgentChatPanel';
 import { NetworkHealthPanel }   from './components/NetworkHealthPanel';
 import { UrbanPlannerModal }    from './components/UrbanPlannerModal';
+import { IntroPage, useIntroComplete } from './components/IntroPage';
 
 type MainTab    = 'map' | 'sentinel' | string;
 type ConsoleTab = 'traces' | 'ledger' | 'console' | 'network';
 
 export default function Dashboard() {
   const { settings } = useSettings();
+  const [introComplete, completeIntro] = useIntroComplete();
   const [activeMainTab,      setActiveMainTab]      = useState<MainTab | null>(null);
   const [explorerTabs,       setExplorerTabs]       = useState<Array<{id: string; label: string; session?: any; isNewSession?: boolean; isDirty?: boolean; diffMap?: any}>>([]);
   const [detectionTabs,      setDetectionTabs]      = useState<Array<{id: string; label: string; session?: any; isNewSession?: boolean; isDirty?: boolean; diffMap?: any}>>([]);
@@ -270,6 +272,57 @@ export default function Dashboard() {
     setConsoleTabKey(k => k + 1);
   }, []);
 
+  const handleActivityChange = useCallback((activity: 'explorer' | 'detection' | 'network' | 'maintenance') => {
+    if (sidebarActivity === 'explorer') setExplorerActiveTab(activeMainTab);
+    else setDetectionActiveTab(activeMainTab);
+
+    setSidebarActivity(activity);
+
+    if (activity === 'detection') {
+      if (!detectionTabs.find(t => t.id === 'sentinel'))
+        setDetectionTabs(prev => [...prev, { id: 'sentinel', label: 'Detection Node' }]);
+      switchMainTab('sentinel');
+      setSelectedSession(null);
+      return;
+    }
+
+    if (activity === 'network' || activity === 'maintenance') {
+      setActiveMainTab(null);
+      setSelectedSession(null);
+      return;
+    }
+
+    const tabs = explorerTabs;
+    const saved = explorerActiveTab;
+
+    if (saved && tabs.find(t => t.id === saved)) {
+      switchMainTab(saved);
+      const tab = tabs.find(t => t.id === saved);
+      if (tab?.session) setSelectedSession(tab.session);
+    } else if (tabs.length > 0) {
+      switchMainTab(tabs[tabs.length - 1].id as MainTab);
+      if (tabs[tabs.length - 1].session) setSelectedSession(tabs[tabs.length - 1].session);
+    } else {
+      setActiveMainTab(null);
+      setSelectedSession(null);
+    }
+  }, [
+    activeMainTab,
+    detectionTabs,
+    explorerActiveTab,
+    explorerTabs,
+    sidebarActivity,
+    switchMainTab,
+  ]);
+
+  const createNewSessionTab = useCallback(() => {
+    if (sidebarActivity !== 'explorer') handleActivityChange('explorer');
+    const id = 'new-session-' + Date.now();
+    setExplorerTabs(prev => [...prev, { id, label: 'New Session', isNewSession: true }]);
+    switchMainTab(id);
+    setSelectedSession(null);
+  }, [handleActivityChange, sidebarActivity, switchMainTab]);
+
   // ── Session handling ──────────────────────
   const handleSessionClick = async (session: any) => {
     console.log('Session clicked:', session);
@@ -376,9 +429,9 @@ export default function Dashboard() {
     height: '100%', padding: '0 14px', minWidth: 100, flexShrink: 0,
     cursor: 'pointer', border: 'none', outline: 'none',
     background: active ? 'var(--v-panel-bg)' : 'transparent',
-    color: active ? '#fff' : 'var(--v-text-muted)',
+    color: active ? 'var(--v-text-primary)' : 'var(--v-text-muted)',
     fontSize: '0.72rem', fontWeight: active ? 500 : 400,
-    fontFamily: 'Inter, system-ui, sans-serif',
+    fontFamily: 'var(--v-font-ui)',
     letterSpacing: '-0.01em',
     transition: 'background 120ms ease, color 120ms ease',
   });
@@ -389,12 +442,17 @@ export default function Dashboard() {
     height: '100%', padding: '0 12px', flexShrink: 0,
     cursor: 'pointer', border: 'none', outline: 'none',
     background: 'transparent',
-    color: active ? '#fff' : 'var(--v-text-muted)',
+    color: active ? 'var(--v-text-primary)' : 'var(--v-text-muted)',
     fontSize: '0.60rem', fontWeight: active ? 600 : 500,
-    fontFamily: 'Inter, system-ui, sans-serif',
+    fontFamily: 'var(--v-font-ui)',
     letterSpacing: '0.07em', textTransform: 'uppercase',
     transition: 'color 120ms ease',
   });
+
+  /* ── Intro gate ───────────────────────────── */
+  if (!introComplete) {
+    return <IntroPage onComplete={completeIntro} />;
+  }
 
   return (
     <div style={{
@@ -407,6 +465,10 @@ export default function Dashboard() {
       <TopBar
         onSettingsOpen={() => setSettingsOpen(true)}
         onCommandOpen={() => setCmdOpen(true)}
+        onNewSession={createNewSessionTab}
+        onSaveSession={saveActiveSession}
+        onActivityChange={handleActivityChange}
+        onConsoleTab={(tab) => switchConsoleTab(tab as any)}
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
@@ -420,31 +482,9 @@ export default function Dashboard() {
           onSettingsOpen={() => setSettingsOpen(true)}
           onSessionClick={handleSessionClick}
           onActivityChange={(activity) => {
-            if (sidebarActivity === 'explorer') setExplorerActiveTab(activeMainTab);
-            else setDetectionActiveTab(activeMainTab);
-            setSidebarActivity(activity);
-            if (activity === 'detection') {
-              if (!detectionTabs.find(t => t.id === 'sentinel'))
-                setDetectionTabs(prev => [...prev, { id: 'sentinel', label: 'Detection Node' }]);
-              switchMainTab('sentinel'); setSelectedSession(null); return;
-            }
-            if (activity === 'network') { setActiveMainTab(null); setSelectedSession(null); return; }
-            const tabs = explorerTabs;
-            const saved = explorerActiveTab;
-            if (saved && tabs.find(t => t.id === saved)) {
-              switchMainTab(saved);
-              const tab = tabs.find(t => t.id === saved);
-              if (tab?.session) setSelectedSession(tab.session);
-            } else if (tabs.length > 0) {
-              switchMainTab(tabs[tabs.length - 1].id as MainTab);
-              if (tabs[tabs.length - 1].session) setSelectedSession(tabs[tabs.length - 1].session);
-            } else { setActiveMainTab(null); setSelectedSession(null); }
+            handleActivityChange(activity);
           }}
-          onNewSessionClick={() => {
-            const id = 'new-session-' + Date.now();
-            setExplorerTabs(prev => [...prev, { id, label: 'New Session', isNewSession: true }]);
-            switchMainTab(id);
-          }}
+          onNewSessionClick={createNewSessionTab}
           onRefreshSessions={() => { if ((window as any).__refreshSessions) (window as any).__refreshSessions(); }}
           onSessionsDeleted={(sessionIds) => {
             const newTabs = openTabs.filter(t => !sessionIds.includes(t.id));
@@ -472,7 +512,7 @@ export default function Dashboard() {
                   onClick={() => { switchMainTab(tab.id); if (tab.session) setSelectedSession(tab.session); else setSelectedSession(null); }}
                   className="tab-sep"
                   style={tabBtn(active)}
-                  onMouseEnter={(e) => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'var(--v-hover)'; (e.currentTarget as HTMLElement).style.color = '#fff'; }}}
+                  onMouseEnter={(e) => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'var(--v-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--v-text-primary)'; }}}
                   onMouseLeave={(e) => { if (!active) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--v-text-muted)'; }}}
                 >
                   {tab.id === 'map'      && <span style={{ color: active ? 'var(--v-accent)' : 'var(--v-text-muted)', display: 'flex' }}><MapPin size={11} /></span>}
@@ -486,7 +526,7 @@ export default function Dashboard() {
                       cursor: 'pointer', borderRadius: 3, flexShrink: 0,
                       transition: 'background 120ms ease, color 120ms ease',
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--v-hover)'; (e.currentTarget as HTMLElement).style.color = '#fff'; }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--v-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--v-text-primary)'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--v-text-muted)'; }}
                     >
                       <X size={9} />
@@ -529,7 +569,7 @@ export default function Dashboard() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   boxShadow: '0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04), 0 0 0 1px rgba(92,143,248,0.08)',
                 }}>
-                  <MapPin size={20} style={{ color: 'var(--c-text-3)' }} />
+                  <img src="/logo.svg" alt="VIGIA" style={{ width: 22, height: 22, opacity: 0.8 }} />
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{

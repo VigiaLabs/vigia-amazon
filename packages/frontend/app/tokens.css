@@ -190,10 +190,10 @@
 
     --v-accent:        #4f46e5;
     --v-accent-hover:  #6366f1;
-    --v-accent-bright: #6366f1;
-    --v-accent-muted:  rgba(79,70,229,0.12);
-    --v-accent-glow:   rgba(79,70,229,0.15);
-    --v-accent-ring:   rgba(79,70,229,0.25);
+    --v-accent-bright: #818cf8;
+    --v-accent-muted:  rgba(79,70,229,0.10);
+    --v-accent-glow:   rgba(79,70,229,0.13);
+    --v-accent-ring:   rgba(79,70,229,0.22);
 
     --v-success:     #16a34a;
     --v-success-dim: rgba(22,163,74,0.12);
@@ -203,24 +203,24 @@
     --v-danger-dim:  rgba(220,38,38,0.10);
 
     --v-rose:        #7c3aed;
-    --v-rose-dim:    rgba(124,58,237,0.10);
-    --v-rose-border: rgba(124,58,237,0.22);
+    --v-rose-dim:    rgba(124,58,237,0.08);
+    --v-rose-border: rgba(124,58,237,0.20);
 
     --v-hover:    rgba(0,0,0,0.045);
     --v-hover-md: rgba(0,0,0,0.08);
-    --v-active:   rgba(79,70,229,0.10);
+    --v-active:   rgba(79,70,229,0.08);
 
     --v-topbar-bg:            #f8f8fc;
     --v-topbar-border:        #e0e0ea;
     --v-topbar-menu:          rgba(20,20,50,0.52);
-    --v-topbar-menu-hover:    rgba(79,70,229,0.09);
-    --v-topbar-menu-active:   #4338ca;
+    --v-topbar-menu-hover:    rgba(79,70,229,0.08);
+    --v-topbar-menu-active:   #4f46e5;
     --v-topbar-search-bg:     rgba(0,0,0,0.035);
     --v-topbar-search-border: rgba(79,70,229,0.22);
     --v-topbar-search-text:   rgba(20,20,50,0.42);
 
     --v-sb-bg:          #e8e8f0;
-    --v-sb-accent-bg:   #6366f1;
+    --v-sb-accent-bg:   #4f46e5;
     --v-sb-accent-text: #ffffff;
     --v-sb-text:        #374151;
     --v-sb-sep:         #d0d0dc;
@@ -231,7 +231,7 @@
     --v-rail-icon:        #6b7280;
     --v-rail-icon-hover:  #374151;
     --v-rail-icon-active: #4f46e5;
-    --v-rail-active-bg:   rgba(79,70,229,0.09);
+    --v-rail-active-bg:   rgba(79,70,229,0.08);
     --v-rail-indicator:   #4f46e5;
     --v-rail-tooltip-bg:  #1e1e2c;
     --v-rail-tooltip-text:#e5e7eb;
@@ -268,10 +268,10 @@
 
   --v-accent:        #4f46e5;
   --v-accent-hover:  #6366f1;
-  --v-accent-bright: #6366f1;
-  --v-accent-muted:  rgba(79,70,229,0.12);
-  --v-accent-glow:   rgba(79,70,229,0.15);
-  --v-accent-ring:   rgba(79,70,229,0.25);
+  --v-accent-bright: #818cf8;
+  --v-accent-muted:  rgba(79,70,229,0.10);
+  --v-accent-glow:   rgba(79,70,229,0.13);
+  --v-accent-ring:   rgba(79,70,229,0.22);
 
   --v-success:     #16a34a;
   --v-success-dim: rgba(22,163,74,0.12);
@@ -281,24 +281,24 @@
   --v-danger-dim:  rgba(220,38,38,0.10);
 
   --v-rose:        #7c3aed;
-  --v-rose-dim:    rgba(124,58,237,0.10);
-  --v-rose-border: rgba(124,58,237,0.22);
+  --v-rose-dim:    rgba(124,58,237,0.08);
+  --v-rose-border: rgba(124,58,237,0.20);
 
   --v-hover:    rgba(0,0,0,0.045);
   --v-hover-md: rgba(0,0,0,0.08);
-  --v-active:   rgba(79,70,229,0.10);
+  --v-active:   rgba(79,70,229,0.08);
 
   --v-topbar-bg:            #f8f8fc;
   --v-topbar-border:        #e0e0ea;
   --v-topbar-menu:          rgba(20,20,50,0.52);
-  --v-topbar-menu-hover:    rgba(79,70,229,0.09);
-  --v-topbar-menu-active:   #4338ca;
+  --v-topbar-menu-hover:    rgba(79,70,229,0.08);
+  --v-topbar-menu-active:   #4f46e5;
   --v-topbar-search-bg:     rgba(0,0,0,0.035);
   --v-topbar-search-border: rgba(79,70,229,0.22);
   --v-topbar-search-text:   rgba(20,20,50,0.42);
 
   --v-sb-bg:          #e8e8f0;
-  --v-sb-accent-bg:   #6366f1;
+  --v-sb-accent-bg:   #4f46e5;
   --v-sb-accent-text: #ffffff;
   --v-sb-text:        #374151;
   --v-sb-sep:         #d0d0dc;
@@ -309,7 +309,7 @@
   --v-rail-icon:        #6b7280;
   --v-rail-icon-hover:  #374151;
   --v-rail-icon-active: #4f46e5;
-  --v-rail-active-bg:   rgba(79,70,229,0.09);
+  --v-rail-active-bg:   rgba(79,70,229,0.08);
   --v-rail-indicator:   #4f46e5;
   --v-rail-tooltip-bg:  #1e1e2c;
   --v-rail-tooltip-text:#e5e7eb;

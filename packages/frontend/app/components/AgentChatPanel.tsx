@@ -4,7 +4,8 @@ import { useRef, useState, useEffect } from 'react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MONO = "'IBM Plex Mono', monospace";
+const MONO = "'IBM Plex Mono', 'JetBrains Mono', monospace";
+const SANS = "'IBM Plex Sans', 'Inter', system-ui, sans-serif";
 const DEFAULT_WIDTH = 300;
 const MIN_OPEN_WIDTH = 200;
 const MAX_WIDTH = 500;
@@ -37,9 +38,54 @@ const QUICK_PROMPTS: Record<string, string[]> = {
   ],
 };
 
+const STATIC_ATTACH_OPTIONS: Record<string, Array<{ label: string; key: string }>> = {
+  livemap: [
+    { label: 'Current map area',     key: 'mapBounds'      },
+    { label: 'Visible hazards',      key: 'visibleHazards' },
+    { label: 'Current route',        key: 'activeRoute'    },
+  ],
+  network: [
+    { label: 'Selected node',        key: 'selectedNode'   },
+    { label: 'Network topology',     key: 'networkGraph'   },
+    { label: 'Coverage gaps',        key: 'coverageGaps'   },
+  ],
+  maintenance: [
+    { label: 'Active work orders',   key: 'workOrders'     },
+    { label: 'Priority queue',       key: 'priorityQueue'  },
+    { label: 'Resource availability',key: 'resources'      },
+  ],
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const mkId = () => Math.random().toString(36).slice(2, 10);
+
+/** Pull a human-readable string out of a raw Bedrock trace object. */
+function extractTraceText(raw: any): string {
+  if (typeof raw === 'string') return raw;
+  const t = raw?.trace ?? raw;
+
+  // orchestrationTrace → rationale
+  const ot = t?.orchestrationTrace;
+  if (ot?.rationale?.text)                              return ot.rationale.text;
+  if (ot?.observation?.finalResponse?.text)             return ot.observation.finalResponse.text;
+  if (ot?.invocationInput?.actionGroupInvocationInput)
+    return `Calling tool: ${ot.invocationInput.actionGroupInvocationInput.actionGroupName ?? 'unknown'}`;
+  if (ot?.invocationInput?.toolUse?.name)               return `Calling: ${ot.invocationInput.toolUse.name}`;
+  if (ot?.modelInvocationOutput?.rawResponse?.content)  return ot.modelInvocationOutput.rawResponse.content.slice(0, 200);
+  if (ot?.modelInvocationInput)                         return 'Consulting model…';
+
+  // preProcessingTrace
+  const pre = t?.preProcessingTrace;
+  if (pre?.modelInvocationOutput?.parsedResponse?.rationale) return pre.modelInvocationOutput.parsedResponse.rationale;
+
+  // postProcessingTrace
+  const post = t?.postProcessingTrace;
+  if (post?.modelInvocationOutput?.parsedResponse?.text)     return post.modelInvocationOutput.parsedResponse.text;
+
+  // fallback: stringify and trim
+  try { return JSON.stringify(t).slice(0, 160); } catch { return '…'; }
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -49,36 +95,91 @@ export interface AgentChatPanelProps {
   availableSessions?: Array<{ sessionId: string; label: string; geohash?: string }>;
 }
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'error' | 'thinking';
-  content: string;
-  timestamp: number;
-  hazards?: Array<{
-    hazardId: string;
-    latitude: number;
-    longitude: number;
-    hazardType: string;
-    priority: number;
-  }>;
+interface ThinkingTrace {
+  id:   string;
+  text: string;
 }
 
+interface Message {
+  id:             string;
+  role:           'user' | 'assistant' | 'error';
+  content:        string;
+  timestamp:      number;
+  traces?:        ThinkingTrace[];
+  isThinking?:    boolean;
+  thinkDuration?: number;
+  hazards?: Array<{
+    hazardId:   string;
+    latitude:   number;
+    longitude:  number;
+    hazardType: string;
+    priority:   number;
+  }>;
+}
+interface ContextAttachment {
+  id:    string;
+  label: string;
+  data:  Record<string, any>;
+}
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [sessionId] = useState(() => Math.random().toString(36).slice(2, 18));
-  const [collapsed, setCollapsed] = useState(false);
-  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+export function AgentChatPanel({ contextType, context = {}, availableSessions = [] }: AgentChatPanelProps) {
+  const [messages, setMessages]           = useState<Message[]>([]);
+  const [query, setQuery]                 = useState('');
+  const [loading, setLoading]             = useState(false);
+  const [sessionId, setSessionId]         = useState<string>(() => mkId());
+  const [collapsed, setCollapsed]         = useState(false);
+  const [panelWidth, setPanelWidth]       = useState(DEFAULT_WIDTH);
+  const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
+  const [attachments, setAttachments]     = useState<ContextAttachment[]>([]);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef    = useRef<HTMLTextAreaElement>(null);
   const pinMenuRef     = useRef<HTMLDivElement>(null);
+  const attachMenuRef  = useRef<HTMLDivElement>(null);
+  const hasHydrated    = useRef(false);
   const isDragging     = useRef(false);
   const startX         = useRef(0);
   const startW         = useRef(0);
+
+  // ── Hydrate from localStorage on mount; save on every subsequent change ─────
+  useEffect(() => {
+    if (!hasHydrated.current) {
+      hasHydrated.current = true;
+      try {
+        const raw = localStorage.getItem(`vigia:chat:${contextType}`);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          if (Array.isArray(saved.messages) && saved.messages.length > 0) {
+            setMessages((saved.messages as Message[]).map((m: Message) =>
+              m.isThinking ? { ...m, isThinking: false, content: m.content || '[interrupted]' } : m
+            ));
+          }
+          if (saved.sessionId) setSessionId(saved.sessionId);
+        }
+      } catch {}
+      return;
+    }
+    try {
+      localStorage.setItem(
+        `vigia:chat:${contextType}`,
+        JSON.stringify({ messages, sessionId })
+      );
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, sessionId]);
+
+  // ── Close attach menu on outside click ─────────────────────────────────
+  useEffect(() => {
+    if (!showAttachMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node))
+        setShowAttachMenu(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showAttachMenu]);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -123,6 +224,28 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
     e.preventDefault();
   };
 
+  const clearHistory = () => {
+    setMessages([]);
+    setAttachments([]);
+    const newSid = mkId();
+    setSessionId(newSid);
+    try { localStorage.removeItem(`vigia:chat:${contextType}`); } catch {}
+  };
+
+  // Derive attach-menu options from static list + passed sessions
+  const attachOptions: ContextAttachment[] = [
+    ...(STATIC_ATTACH_OPTIONS[contextType] ?? []).map(o => ({
+      id:    `ctx-${o.key}`,
+      label: o.label,
+      data:  { [o.key]: context[o.key] ?? null },
+    })),
+    ...availableSessions.map(s => ({
+      id:    `sess-${s.sessionId}`,
+      label: s.label,
+      data:  { sessionId: s.sessionId, geohash: s.geohash, sessionLabel: s.label },
+    })),
+  ];
+
   // Send a query to the orchestration agent
   const sendQuery = async (q?: string) => {
     const text = (q ?? query).trim();
@@ -143,12 +266,13 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
       
       if (contextType === 'network') {
         // Use network-analysis API for network context
+        const attachCtx = attachments.reduce<Record<string, any>>((acc, a) => ({ ...acc, ...a.data }), {});
         const res = await fetch('/api/agent/network-analysis', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             query: text,
-            context: context,
+            context: { ...context, ...attachCtx },
           }),
         });
         const data = await res.json();
@@ -156,12 +280,13 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
         setMessages(prev => [...prev, { id: mkId(), role: 'assistant', content, timestamp: Date.now() }]);
       } else if (contextType === 'livemap' && isUrbanPlanning) {
         // Use urban-planning API for path/route queries
+        const attachCtx = attachments.reduce<Record<string, any>>((acc, a) => ({ ...acc, ...a.data }), {});
         const res = await fetch('/api/agent/urban-planning', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             query: text,
-            context: context,
+            context: { ...context, ...attachCtx },
           }),
         });
         const data = await res.json();
@@ -182,12 +307,53 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
           body: JSON.stringify({
             query: text,
             sessionId,
-            context: { type: contextType, ...context },
+            context: { type: contextType, ...context, attachments: attachments.map(a => a.data) },
           }),
         });
         const data = await res.json();
+        const rawTraces: any[] = data.traces ?? data.thinking ?? [];
+        const thinkStart = Date.now();
+
+        // Add assistant placeholder immediately so the thinking section appears
+        const assistantId = mkId();
+        setMessages(prev => [...prev, {
+          id: assistantId, role: 'assistant', content: '',
+          timestamp: Date.now(), traces: [],
+          isThinking: rawTraces.length > 0,
+        }]);
+
+        // Auto-expand trace section while thinking is in progress
+        if (rawTraces.length > 0) {
+          setExpandedTraces(prev => new Set([...prev, assistantId]));
+        }
+
+        // Reveal traces one-by-one to simulate streaming
+        for (const traceText of rawTraces) {
+          await new Promise(r => setTimeout(r, 280 + Math.random() * 320));
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId
+              ? { ...m, traces: [...(m.traces ?? []), { id: mkId(), text: extractTraceText(traceText) }] }
+              : m
+          ));
+        }
+
+        // Brief pause before the answer appears
+        if (rawTraces.length > 0) await new Promise(r => setTimeout(r, 180));
+
         const content = data.content ?? data.message ?? JSON.stringify(data);
-        setMessages(prev => [...prev, { id: mkId(), role: 'assistant', content, timestamp: Date.now() }]);
+        const thinkDuration = Date.now() - thinkStart;
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId
+            ? { ...m, content, isThinking: false, thinkDuration }
+            : m
+        ));
+
+        // Auto-collapse traces ~1 s after answer lands
+        if (rawTraces.length > 0) {
+          setTimeout(() => setExpandedTraces(prev => {
+            const n = new Set(prev); n.delete(assistantId); return n;
+          }), 900);
+        }
       }
     } catch {
       setMessages(prev => [...prev, {
@@ -222,15 +388,19 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
             border: '1px solid var(--c-border)',
             borderRadius: 3, cursor: 'pointer',
             color: 'var(--c-rose-2)', fontSize: '0.8rem',
-            transition: 'all 0.12s',
+            transition: 'background 0.12s, color 0.12s, border-color 0.12s',
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'var(--c-rose-dim)';
-            (e.currentTarget as HTMLElement).style.borderColor = 'var(--c-rose-border)';
+            const el = e.currentTarget as HTMLElement;
+            el.style.background  = 'var(--c-rose-dim)';
+            el.style.borderColor = 'var(--c-rose-border)';
+            el.style.color       = 'var(--c-rose-2)';
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'transparent';
-            (e.currentTarget as HTMLElement).style.borderColor = 'var(--c-border)';
+            const el = e.currentTarget as HTMLElement;
+            el.style.background  = 'transparent';
+            el.style.borderColor = 'var(--c-border)';
+            el.style.color       = 'var(--c-rose-2)';
           }}
         >
           ‹
@@ -239,7 +409,7 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
         <div style={{
           marginTop: 14,
           fontSize: '0.52rem', color: 'var(--c-text-3)',
-          fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.09em',
+          fontFamily: SANS, textTransform: 'uppercase', letterSpacing: '0.09em',
           writingMode: 'vertical-rl', textOrientation: 'mixed',
           transform: 'rotate(180deg)', userSelect: 'none',
         }}>
@@ -252,11 +422,13 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
   // ── Expanded state ──────────────────────────────────────────────────────────
   return (
     <>
-      {/* Keyframe for loading dots */}
       <style>{`
-        @keyframes agent-dot {
-          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-          40%            { transform: scale(1.0); opacity: 1.0; }
+        @keyframes agent-shimmer {
+          0%   { background-position: -200% center; }
+          100% { background-position:  200% center; }
+        }
+        @keyframes agent-spin {
+          to { transform: rotate(360deg); }
         }
       `}</style>
 
@@ -294,35 +466,71 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
         }}>
           <span style={{
             fontSize: '0.60rem', fontWeight: 600,
-            color: 'var(--c-rose-2)', fontFamily: MONO,
+            color: 'var(--c-rose-2)', fontFamily: SANS,
             letterSpacing: '0.06em', textTransform: 'uppercase',
           }}>
             {CONTEXT_LABELS[contextType]}
           </span>
 
-          {/* Collapse button */}
-          <button
-            onClick={() => setCollapsed(true)}
-            title="Collapse panel"
-            style={{
-              width: 22, height: 22,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: 'none',
-              cursor: 'pointer', color: 'var(--c-text-3)',
-              fontSize: '0.8rem', borderRadius: 3,
-              transition: 'all 0.12s',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)';
-              (e.currentTarget as HTMLElement).style.color = 'var(--c-text)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = 'transparent';
-              (e.currentTarget as HTMLElement).style.color = 'var(--c-text-3)';
-            }}
-          >
-            ›
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {/* New chat button */}
+            <button
+              onClick={clearHistory}
+              title="New chat"
+              style={{
+                width: 22, height: 22,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent', border: 'none',
+                cursor: 'pointer', color: 'var(--c-text-3)',
+                borderRadius: 3,
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget as HTMLElement;
+                el.style.background = 'var(--c-rose-dim)';
+                el.style.color      = 'var(--c-red)';
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget as HTMLElement;
+                el.style.background = 'transparent';
+                el.style.color      = 'var(--c-text-3)';
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4h6v2" />
+              </svg>
+            </button>
+            {/* Collapse button */}
+            <button
+              onClick={() => setCollapsed(true)}
+              title="Collapse panel"
+              style={{
+                width: 22, height: 22,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent', border: 'none',
+                cursor: 'pointer', color: 'var(--c-text-3)',
+                fontSize: '0.8rem', borderRadius: 3,
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget as HTMLElement;
+                el.style.background = 'var(--c-hover)';
+                el.style.color      = 'var(--c-text)';
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget as HTMLElement;
+                el.style.background = 'transparent';
+                el.style.color      = 'var(--c-text-3)';
+              }}
+            >
+              ›
+            </button>
+          </div>
         </div>
 
         {/* ── Message list ───────────────────────────────────────────────── */}
@@ -334,7 +542,7 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
           {messages.length === 0 && (
             <div style={{
               color: 'var(--c-text-3)', fontSize: '0.64rem',
-              fontFamily: MONO, textAlign: 'center',
+              fontFamily: SANS, textAlign: 'center',
               marginTop: 20, lineHeight: 1.85,
             }}>
               Ask anything about<br />
@@ -344,47 +552,145 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
             </div>
           )}
 
-          {messages.map((m, i) => (
-            <div key={i} style={{
+          {messages.map((m) => (
+            <div key={m.id} style={{
               display: 'flex', flexDirection: 'column',
               alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
+              gap: 4,
             }}>
-              <div style={{
-                maxWidth: '93%', padding: '6px 9px', borderRadius: 4,
-                fontSize: '0.65rem', fontFamily: MONO, lineHeight: 1.6,
-                background:
-                  m.role === 'user'  ? 'var(--c-rose-dim)'       :
-                  m.role === 'error' ? 'rgba(255,60,50,0.08)'    :
-                                       'var(--c-elevated)',
-                color:
-                  m.role === 'user'  ? 'var(--c-rose-2)' :
-                  m.role === 'error' ? 'var(--c-red)'    :
-                                       'var(--c-text)',
-                border: `1px solid ${
-                  m.role === 'user'  ? 'var(--c-rose-border)'     :
-                  m.role === 'error' ? 'rgba(255,60,50,0.25)'     :
-                                       'var(--c-border)'
-                }`,
-                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-              }}>
-                {m.content}
-              </div>
+
+              {/* ── Thinking traces (assistant only) ──────────────────── */}
+              {m.role === 'assistant' && (m.traces?.length ?? 0) > 0 && (
+                <div style={{
+                  maxWidth: '93%',
+                  border: '1px solid var(--c-border)',
+                  borderRadius: 5, overflow: 'hidden',
+                }}>
+                  {/* Header — click to expand/collapse */}
+                  <button
+                    onClick={() => setExpandedTraces(prev => {
+                      const n = new Set(prev);
+                      n.has(m.id) ? n.delete(m.id) : n.add(m.id);
+                      return n;
+                    })}
+                    style={{
+                      width: '100%', padding: '5px 9px',
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'var(--c-elevated)',
+                      border: 'none', cursor: 'pointer',
+                      color: 'var(--c-text-3)',
+                      fontFamily: SANS, fontSize: '0.59rem',
+                      textAlign: 'left',
+                    }}
+                  >
+                    {/* Spinner while active, chevron when done */}
+                    {m.isThinking ? (
+                      <svg
+                        width="11" height="11" viewBox="0 0 11 11"
+                        style={{ animation: 'agent-spin 1s linear infinite', flexShrink: 0 }}
+                      >
+                        <circle cx="5.5" cy="5.5" r="4" fill="none"
+                          stroke="var(--c-text-3)" strokeWidth="1.4"
+                          strokeDasharray="9 5" />
+                      </svg>
+                    ) : (
+                      <svg
+                        width="8" height="8" viewBox="0 0 8 8"
+                        style={{
+                          flexShrink: 0,
+                          transform: expandedTraces.has(m.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.15s',
+                        }}
+                      >
+                        <path d="M2 1.5l3.5 3L2 7"
+                          fill="none" stroke="var(--c-text-3)" strokeWidth="1.2"
+                          strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    <span style={{ color: m.isThinking ? 'var(--c-text-3)' : 'var(--c-text-2)' }}>
+                      {m.isThinking
+                        ? 'Thinking…'
+                        : `Thought for ${((m.thinkDuration ?? 0) / 1000).toFixed(1)}s`
+                      }
+                    </span>
+                  </button>
+
+                  {/* Traces body */}
+                  {expandedTraces.has(m.id) && (
+                    <div style={{
+                      padding: '8px 10px',
+                      background: 'var(--c-bg)',
+                      display: 'flex', flexDirection: 'column', gap: 7,
+                      maxHeight: 240, overflowY: 'auto',
+                      borderTop: '1px solid var(--c-border)',
+                    }}>
+                      {m.traces!.map((t, ti) => {
+                        const isActiveTrace = m.isThinking && ti === m.traces!.length - 1;
+                        return (
+                          <div key={t.id} style={{
+                            fontSize: '0.60rem', lineHeight: 1.6,
+                            fontFamily: MONO,
+                            wordBreak: 'break-word',
+                            ...(isActiveTrace ? {
+                              background:
+                                'linear-gradient(90deg, var(--c-text-3) 20%, var(--c-text-2) 50%, var(--c-text-3) 80%)',
+                              backgroundSize: '200% auto',
+                              WebkitBackgroundClip: 'text',
+                              WebkitTextFillColor: 'transparent',
+                              backgroundClip: 'text',
+                              animation: 'agent-shimmer 2.2s linear infinite',
+                            } : {
+                              color: 'var(--c-text-3)',
+                            }),
+                          }}>
+                            {t.text}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Main content bubble ───────────────────────────────── */}
+              {(m.content || m.role === 'user' || m.role === 'error') && (
+                <div style={{
+                  maxWidth: '93%', padding: '6px 9px', borderRadius: 4,
+                  fontSize: '0.65rem', fontFamily: MONO, lineHeight: 1.6,
+                  background:
+                    m.role === 'user'  ? 'var(--c-rose-dim)'    :
+                    m.role === 'error' ? 'rgba(255,60,50,0.08)' :
+                                         'var(--c-elevated)',
+                  color:
+                    m.role === 'user'  ? 'var(--c-rose-2)' :
+                    m.role === 'error' ? 'var(--c-red)'    :
+                    m.isThinking       ? 'var(--c-text-3)' :
+                                         'var(--c-text)',
+                  border: `1px solid ${
+                    m.role === 'user'  ? 'var(--c-rose-border)' :
+                    m.role === 'error' ? 'rgba(255,60,50,0.25)' :
+                                         'var(--c-border)'
+                  }`,
+                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                }}>
+                  {m.content}
+                </div>
+              )}
             </div>
           ))}
 
-          {/* Thinking indicator */}
-          {loading && (
-            <div style={{ display: 'flex', gap: 5, alignItems: 'center', padding: '4px 0' }}>
-              <div style={{ display: 'flex', gap: 3 }}>
-                {[0, 1, 2].map(i => (
-                  <div key={i} style={{
-                    width: 4, height: 4, borderRadius: '50%',
-                    background: 'var(--c-rose-2)',
-                    animation: `agent-dot 1.1s ${i * 0.18}s ease-in-out infinite`,
-                  }} />
-                ))}
-              </div>
-              <span style={{ fontSize: '0.59rem', color: 'var(--c-text-3)', fontFamily: MONO }}>
+          {/* Spinner only for contexts that have no inline trace streaming */}
+          {loading && !messages.some(m => m.isThinking) && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '4px 0' }}>
+              <svg
+                width="12" height="12" viewBox="0 0 12 12"
+                style={{ animation: 'agent-spin 1s linear infinite', flexShrink: 0 }}
+              >
+                <circle cx="6" cy="6" r="4.5" fill="none"
+                  stroke="var(--c-text-3)" strokeWidth="1.5"
+                  strokeDasharray="10 4" />
+              </svg>
+              <span style={{ fontSize: '0.59rem', color: 'var(--c-text-3)', fontFamily: SANS }}>
                 thinking
               </span>
             </div>
@@ -405,8 +711,8 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
                   background: 'transparent',
                   border: '1px solid var(--c-border)',
                   cursor: 'pointer', color: 'var(--c-text-3)',
-                  fontSize: '0.60rem', fontFamily: MONO,
-                  transition: 'all 0.12s',
+                  fontSize: '0.60rem', fontFamily: SANS,
+                  transition: 'background 0.12s, color 0.12s, border-color 0.12s',
                 }}
                 onMouseEnter={(e) => {
                   const el = e.currentTarget as HTMLElement;
@@ -431,9 +737,141 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
         <div style={{
           padding: '6px 10px 10px 14px',
           borderTop: '1px solid var(--c-border)',
-          flexShrink: 0,
+          flexShrink: 0, position: 'relative',
         }}>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+
+          {/* ── Attach menu popover ─────────────────────────────────────── */}
+          {showAttachMenu && (
+            <div ref={attachMenuRef} style={{
+              position: 'absolute', bottom: 'calc(100% + 4px)',
+              left: 0, right: 0,
+              background: 'var(--c-elevated)',
+              border: '1px solid var(--c-border)',
+              borderRadius: 5, overflow: 'hidden',
+              boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
+              zIndex: 200,
+            }}>
+              <div style={{
+                padding: '5px 10px 3px',
+                fontSize: '0.54rem', color: 'var(--c-text-3)',
+                fontFamily: SANS, letterSpacing: '0.08em', textTransform: 'uppercase',
+              }}>
+                Add context
+              </div>
+              {attachOptions.length === 0 ? (
+                <div style={{ padding: '6px 10px 8px', fontSize: '0.60rem', color: 'var(--c-text-3)', fontFamily: MONO }}>
+                  No sessions available
+                </div>
+              ) : attachOptions.map(opt => {
+                const already = attachments.some(a => a.id === opt.id);
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => {
+                      if (!already) setAttachments(prev => [...prev, opt]);
+                      setShowAttachMenu(false);
+                    }}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      padding: '5px 10px',
+                      background: already ? 'var(--c-rose-dim)' : 'transparent',
+                      border: 'none', borderTop: '1px solid var(--c-border)',
+                      cursor: already ? 'default' : 'pointer',
+                      color: already ? 'var(--c-rose-2)' : 'var(--c-text-2)',
+                      fontFamily: SANS, fontSize: '0.62rem',
+                      display: 'flex', alignItems: 'center', gap: 6,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!already) (e.currentTarget as HTMLElement).style.background = 'var(--c-hover)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!already) (e.currentTarget as HTMLElement).style.background = 'transparent';
+                    }}
+                  >
+                    {already && (
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2.5"
+                        strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Attachment chips ────────────────────────────────────────── */}
+          {attachments.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+              {attachments.map(a => (
+                <div key={a.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 3,
+                  padding: '2px 5px 2px 7px',
+                  background: 'var(--c-rose-dim)',
+                  border: '1px solid var(--c-rose-border)',
+                  borderRadius: 10,
+                  fontSize: '0.57rem', fontFamily: SANS, color: 'var(--c-rose-2)',
+                }}>
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                  </svg>
+                  {a.label}
+                  <button
+                    onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--c-rose-2)', padding: '0 0 0 2px',
+                      fontSize: '0.75rem', lineHeight: 1,
+                      display: 'flex', alignItems: 'center',
+                    }}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
+            {/* Attach button */}
+            <button
+              onClick={() => setShowAttachMenu(v => !v)}
+              title="Add context"
+              style={{
+                width: 28, height: 28, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: showAttachMenu ? 'var(--c-rose-dim)' : 'transparent',
+                border: `1px solid ${showAttachMenu ? 'var(--c-rose-border)' : 'var(--c-border)'}`,
+                borderRadius: 3, cursor: 'pointer',
+                color: showAttachMenu ? 'var(--c-rose-2)' : 'var(--c-text-3)',
+                transition: 'background 0.12s, color 0.12s, border-color 0.12s',
+              }}
+              onMouseEnter={(e) => {
+                if (!showAttachMenu) {
+                  const el = e.currentTarget as HTMLElement;
+                  el.style.borderColor = 'var(--c-rose-border)';
+                  el.style.color       = 'var(--c-rose-2)';
+                  el.style.background  = 'var(--c-rose-dim)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!showAttachMenu) {
+                  const el = e.currentTarget as HTMLElement;
+                  el.style.borderColor = 'var(--c-border)';
+                  el.style.color       = 'var(--c-text-3)';
+                  el.style.background  = 'transparent';
+                }
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+
             <textarea
               ref={textareaRef}
               value={query}
@@ -457,7 +895,7 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
                 border: '1px solid var(--c-border)',
                 borderRadius: 3, padding: '5px 8px',
                 color: 'var(--c-text)',
-                fontSize: '0.64rem', fontFamily: MONO,
+                fontSize: '0.64rem', fontFamily: SANS,
                 lineHeight: 1.5, outline: 'none',
                 transition: 'border-color 0.15s',
               }}
@@ -477,7 +915,7 @@ export function AgentChatPanel({ contextType, context = {} }: AgentChatPanelProp
                 borderRadius: 3,
                 cursor: query.trim() && !loading ? 'pointer' : 'not-allowed',
                 color: query.trim() && !loading ? 'var(--c-rose-2)' : 'var(--c-text-3)',
-                fontSize: '0.85rem', transition: 'all 0.12s',
+                fontSize: '0.85rem', transition: 'background 0.12s, color 0.12s, border-color 0.12s',
               }}
             >
               ↑

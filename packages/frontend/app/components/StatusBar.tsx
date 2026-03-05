@@ -147,7 +147,7 @@ export function StatusBar() {
 
         {/* Hazard count */}
         <Seg onClick={() => {}} title="Active hazard reports">
-          <AlertTriangle size={10} strokeWidth={2.2} style={{ color: 'var(--v-warning)', flexShrink: 0 }} />
+          <AlertTriangle size={10} strokeWidth={2.2} style={{ color: 'var(--v-accent)', flexShrink: 0 }} />
           <span style={TEXT}>7 hazards</span>
         </Seg>
 
@@ -158,7 +158,7 @@ export function StatusBar() {
 
         {/* Network nodes */}
         <Seg onClick={() => {}} title="Connected DePIN nodes">
-          <Activity size={10} strokeWidth={2.2} style={{ color: '#60a5fa', flexShrink: 0 }} />
+          <Activity size={10} strokeWidth={2.2} style={{ color: 'var(--v-accent)', flexShrink: 0 }} />
           <span style={TEXT}>48 nodes</span>
         </Seg>
 

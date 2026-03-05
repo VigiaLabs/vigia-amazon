@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
 
     let completion = '';
     const traces: any[] = [];
+    const thinkingSteps: string[] = [];
     let eventCount = 0;
     
     if (response.completion) {
@@ -99,6 +100,12 @@ export async function POST(req: NextRequest) {
         // Capture trace events
         if (event.trace) {
           traces.push(event.trace);
+          
+          // Extract thinking/rationale
+          const rationale = event.trace.trace?.orchestrationTrace?.rationale?.text;
+          if (rationale) {
+            thinkingSteps.push(rationale);
+          }
         }
       }
     }
@@ -109,6 +116,7 @@ export async function POST(req: NextRequest) {
       content: completion || 'No response from agent. The agent may be processing your request. Try asking with more specific context.',
       sessionId: response.sessionId,
       traces, // Include traces in response
+      thinking: thinkingSteps, // Include extracted thinking steps
     });
   } catch (err: any) {
     console.error('[agent/chat] Error:', err);

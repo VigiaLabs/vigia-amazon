@@ -9,15 +9,18 @@ import { useSettings } from './SettingsContext';
 import { applyMapFilter } from '../lib/map-style';
 
 const C = {
-  bg: '#FFFFFF',
-  panel: '#F5F5F5',
-  hover: '#E5E7EB',
-  border: '#CBD5E1',
-  text: '#000000',
-  textSec: '#6B7280',
-  textMut: '#9CA3AF',
-  accent: '#3B82F6',
-  accentBg: '#EFF6FF',
+  bg: 'var(--v-bg-base)',
+  panel: 'var(--v-bg-surface)',
+  panelAlt: 'var(--v-bg-elevated)',
+  hover: 'var(--v-hover)',
+  border: 'var(--v-border-subtle)',
+  borderStrong: 'var(--v-border-default)',
+  text: 'var(--v-text-primary)',
+  textSec: 'var(--v-text-secondary)',
+  textMut: 'var(--v-text-muted)',
+  accent: 'var(--v-accent)',
+  accentBg: 'var(--v-accent-muted)',
+  accentRing: 'var(--v-accent-ring)',
 };
 
 interface NewSessionViewProps {
@@ -380,13 +383,30 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.bg, padding: 24, gap: 16, overflowY: 'auto' }}>
+      <style>{`
+        .ns-card { transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease; }
+        .ns-card:focus-within { border-color: ${C.accent}; box-shadow: 0 0 0 2px ${C.accentRing}; }
+        .ns-item { transition: background 120ms ease, color 120ms ease; }
+        .ns-item:hover { background: ${C.hover}; }
+        .ns-btn { transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease; }
+        .ns-btn:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.18); }
+        .ns-skeleton-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+        .ns-skeleton-dot, .ns-skeleton-line {
+          background: linear-gradient(90deg,var(--v-hover) 25%,var(--v-hover-md) 50%,var(--v-hover) 75%);
+          background-size: 200% 100%;
+          animation: ns-shimmer 1.6s ease-in-out infinite;
+        }
+        .ns-skeleton-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+        .ns-skeleton-line { height: 8px; border-radius: 4px; }
+        @keyframes ns-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+      `}</style>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h2 style={{ fontSize: '1.2rem', fontWeight: 600, color: C.text, fontFamily: "var(--v-font-ui)", margin: 0 }}>
           Create New Session
         </h2>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4 }}>
+      <div className="ns-card" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: C.panel, border: `1px solid ${C.borderStrong}`, borderRadius: 8 }}>
         <Search size={16} style={{ color: C.textMut }} />
         <input
           type="text"
@@ -396,14 +416,25 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
           style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: '0.9rem', fontFamily: "var(--v-font-ui)", color: C.text }}
         />
       </div>
+      {isSearching && (
+        <div className="ns-card" style={{ border: `1px solid ${C.borderStrong}`, borderRadius: 8, background: C.panel }}>
+          {[78, 62, 84].map((w, i) => (
+            <div key={i} className="ns-skeleton-row" style={{ animationDelay: `${i * 0.1}s` }}>
+              <div className="ns-skeleton-dot" style={{ animationDelay: `${i * 0.12}s` }} />
+              <div className="ns-skeleton-line" style={{ width: `${w}%`, animationDelay: `${i * 0.12}s` }} />
+            </div>
+          ))}
+        </div>
+      )}
 
       {searchResults.length > 0 && (
-        <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${C.border}`, borderRadius: 4, background: C.bg }}>
+        <div className="ns-card" style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${C.borderStrong}`, borderRadius: 8, background: C.panel }}>
           {searchResults.map((loc, i) => (
             <div
               key={i}
               onClick={() => selectLocation(loc)}
-              style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: i < searchResults.length - 1 ? `1px solid ${C.border}` : 'none', background: selectedLocation === loc ? C.accentBg : C.bg }}
+              className="ns-item"
+              style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: i < searchResults.length - 1 ? `1px solid ${C.border}` : 'none', background: selectedLocation === loc ? C.accentBg : C.panel }}
             >
               <div style={{ fontSize: '0.9rem', fontWeight: 500, color: C.text }}>{loc.name}</div>
               <div style={{ fontSize: '0.75rem', color: C.textSec }}>{loc.city}, {loc.region}, {loc.country}</div>
@@ -418,13 +449,14 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
             <button
               onClick={startDrawing}
               disabled={drawMode}
-              style={{ padding: '8px 16px', background: drawMode ? C.panel : C.accent, color: drawMode ? C.textMut : '#FFF', border: `1px solid ${C.border}`, borderRadius: 4, cursor: drawMode ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontFamily: "var(--v-font-ui)", display: 'flex', alignItems: 'center', gap: 6 }}
+              className="ns-btn"
+              style={{ padding: '8px 16px', background: drawMode ? C.panelAlt : C.accent, color: drawMode ? C.textMut : '#FFF', border: `1px solid ${drawMode ? C.border : 'transparent'}`, borderRadius: 8, cursor: drawMode ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontFamily: "var(--v-font-ui)", display: 'flex', alignItems: 'center', gap: 6 }}
             >
               <Square size={14} />
               {drawMode ? 'Drawing... (drag on map)' : 'Draw Coverage Area'}
             </button>
             {boundingBox && (
-              <button onClick={clearBoundingBox} style={{ padding: '8px 16px', background: C.panel, color: C.text, border: `1px solid ${C.border}`, borderRadius: 4, cursor: 'pointer', fontSize: '0.85rem', fontFamily: "var(--v-font-ui)", display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button onClick={clearBoundingBox} className="ns-btn" style={{ padding: '8px 16px', background: C.panel, color: C.text, border: `1px solid ${C.borderStrong}`, borderRadius: 8, cursor: 'pointer', fontSize: '0.85rem', fontFamily: "var(--v-font-ui)", display: 'flex', alignItems: 'center', gap: 6 }}>
                 <X size={14} />
                 Clear
               </button>
@@ -432,7 +464,7 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
           </div>
 
           {boundingBox && (
-            <div style={{ padding: 16, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4 }}>
+            <div className="ns-card" style={{ padding: 16, background: C.panel, border: `1px solid ${C.borderStrong}`, borderRadius: 10 }}>
               <div style={{ fontSize: '0.85rem', fontWeight: 600, color: C.text, marginBottom: 8 }}>Coverage Details</div>
               <div style={{ fontSize: '0.75rem', color: C.textSec, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>Area: {calculateArea(boundingBox).toFixed(2)} km²</div>
@@ -441,7 +473,7 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
               </div>
               <div style={{ marginTop: 12 }}>
                 <label style={{ fontSize: '0.75rem', color: C.textSec, display: 'block', marginBottom: 4 }}>Coverage Type</label>
-                <select value={coverageType} onChange={(e) => setCoverageType(e.target.value as any)} style={{ width: '100%', padding: '6px 10px', border: `1px solid ${C.border}`, borderRadius: 4, fontSize: '0.85rem', fontFamily: "var(--v-font-ui)" }}>
+                <select value={coverageType} onChange={(e) => setCoverageType(e.target.value as any)} style={{ width: '100%', padding: '6px 10px', border: `1px solid ${C.borderStrong}`, borderRadius: 8, fontSize: '0.85rem', fontFamily: "var(--v-font-ui)", background: C.panelAlt, color: C.text }}>
                   <option value="city">City</option>
                   <option value="region">Region</option>
                   <option value="neighborhood">Neighborhood</option>
@@ -451,12 +483,13 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
             </div>
           )}
 
-          <div ref={mapRef} style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 4, minHeight: 400, maxHeight: 500 }} />
+          <div ref={mapRef} className="ns-card" style={{ flex: 1, border: `1px solid ${C.borderStrong}`, borderRadius: 12, minHeight: 380, maxHeight: 520, overflow: 'hidden', background: C.panelAlt }} />
 
           <button
             onClick={createSession}
             disabled={!boundingBox || isCreating}
-            style={{ padding: '12px 24px', background: (!boundingBox || isCreating) ? C.panel : C.accent, color: (!boundingBox || isCreating) ? C.textMut : '#FFF', border: `1px solid ${C.border}`, borderRadius: 4, cursor: (!boundingBox || isCreating) ? 'not-allowed' : 'pointer', fontSize: '0.9rem', fontWeight: 600, fontFamily: "var(--v-font-ui)" }}
+            className="ns-btn"
+            style={{ padding: '12px 24px', background: (!boundingBox || isCreating) ? C.panelAlt : C.accent, color: (!boundingBox || isCreating) ? C.textMut : '#FFF', border: `1px solid ${(!boundingBox || isCreating) ? C.borderStrong : 'transparent'}`, borderRadius: 10, cursor: (!boundingBox || isCreating) ? 'not-allowed' : 'pointer', fontSize: '0.9rem', fontWeight: 600, fontFamily: "var(--v-font-ui)" }}
           >
             {isCreating ? 'Creating...' : 'Create Session'}
           </button>
