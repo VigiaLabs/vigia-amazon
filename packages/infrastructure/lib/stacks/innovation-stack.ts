@@ -148,6 +148,20 @@ export class InnovationStack extends Construct {
 
     this.maintenanceQueueTable.grantReadData(maintenanceQueueQueryFn);
 
+    // Agent Chat Lambda (for Amplify deployment)
+    const agentChatFn = new lambda.Function(this, 'AgentChatFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../../backend/functions/agent-chat')),
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 512,
+      environment: {
+        BEDROCK_AGENT_ID: process.env.BEDROCK_AGENT_ID || 'TAWWC3SQ0L',
+        BEDROCK_AGENT_ALIAS_ID: process.env.BEDROCK_AGENT_ALIAS_ID || 'TSTALIASID',
+      },
+      logRetention: logs.RetentionDays.ONE_WEEK,
+    });
+
     // ─────────────────────────────────────────────────────────────
     // API Gateway
     // ─────────────────────────────────────────────────────────────
@@ -184,6 +198,11 @@ export class InnovationStack extends Construct {
     const economic = this.api.root.addResource('economic');
     const metrics = economic.addResource('metrics');
     metrics.addMethod('GET', new apigateway.LambdaIntegration(economicMetricsQueryFn));
+
+    // POST /agent/chat
+    const agent = this.api.root.addResource('agent');
+    const chat = agent.addResource('chat');
+    chat.addMethod('POST', new apigateway.LambdaIntegration(agentChatFn));
 
     // ─────────────────────────────────────────────────────────────
     // Outputs

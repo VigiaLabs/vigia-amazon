@@ -1,0 +1,12 @@
+{
+  "name": "agent-chat",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agent-runtime": "^3.1000.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^20.0.0"
+  }
+}
