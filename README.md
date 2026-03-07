@@ -545,7 +545,6 @@ Apache License 2.0 - See [LICENSE](LICENSE)
 ## Contact
 
 **Project Lead**: Tom Mathew 
-**Repository**: https://github.com/BlueWaves-afk/vigia-amazon  
 **Competition**: Amazon 10,000 AIdeas (Semi-Finalist)
 
 ---
