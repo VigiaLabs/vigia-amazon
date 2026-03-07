@@ -238,7 +238,7 @@ export function AgentTracesTab() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    connectSSE('/api/agent-traces/stream');
+    connectSSE('/agent-traces/stream');
     return () => disconnectSSE();
   }, [connectSSE, disconnectSSE]);
 

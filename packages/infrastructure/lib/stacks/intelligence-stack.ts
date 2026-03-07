@@ -194,6 +194,8 @@ export class IntelligenceStack extends Construct {
       }
 
       // Urban Planner Lambda
+      const routeCalculatorName = `${cdk.Stack.of(this).stackName}-VigiaRouteCalculator`;
+
       this.urbanPlannerFn = new lambda.Function(this, 'UrbanPlannerFunction', {
         runtime: lambda.Runtime.PYTHON_3_12,
         handler: 'urban-planner.lambda_handler',
@@ -202,6 +204,7 @@ export class IntelligenceStack extends Construct {
         environment: {
           HAZARDS_TABLE_NAME: props.hazardsTable.tableName,
           ECONOMIC_METRICS_TABLE_NAME: props.economicMetricsTable?.tableName || '',
+          ROUTE_CALCULATOR_NAME: routeCalculatorName,
         },
       });
 
@@ -237,7 +240,7 @@ export class IntelligenceStack extends Construct {
 
       // Route Calculator for pin-based routing
       const routeCalculator = new location.CfnRouteCalculator(this, 'VigiaRouteCalculator', {
-        calculatorName: 'VigiaRouteCalculator',
+        calculatorName: routeCalculatorName,
         dataSource: 'Esri',
         description: 'Route calculator for fastest and safest path planning',
       });

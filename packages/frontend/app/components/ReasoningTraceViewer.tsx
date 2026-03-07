@@ -142,10 +142,9 @@ export function ReasoningTraceViewer() {
 
   // Connect to SSE stream on mount
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://p4qc9upgsf.execute-api.us-east-1.amazonaws.com/prod';
-    // Only connect if innovation endpoint is configured
+    // Only connect if Innovation API endpoint is configured
     if (process.env.NEXT_PUBLIC_INNOVATION_API_URL) {
-      connectSSE(`${apiUrl}/agent-traces/stream`);
+      connectSSE('/agent-traces/stream');
     }
     
     return () => disconnectSSE();

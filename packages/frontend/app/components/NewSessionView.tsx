@@ -65,7 +65,7 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
     
     setIsSearching(true);
     try {
-      const apiUrl = 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
       const response = await fetch(`${apiUrl}/places/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

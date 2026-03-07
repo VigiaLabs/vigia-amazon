@@ -1,7 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
@@ -149,30 +148,6 @@ export class InnovationStack extends Construct {
 
     this.maintenanceQueueTable.grantReadData(maintenanceQueueQueryFn);
 
-    // Agent Chat Lambda (for Amplify deployment)
-    const agentChatFn = new lambdaNodejs.NodejsFunction(this, 'AgentChatFunction', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'handler',
-      entry: path.join(__dirname, '../../../backend/functions/agent-chat/index.ts'),
-      timeout: cdk.Duration.seconds(60),
-      memorySize: 512,
-      environment: {
-        BEDROCK_AGENT_ID: process.env.BEDROCK_AGENT_ID || 'TAWWC3SQ0L',
-        BEDROCK_AGENT_ALIAS_ID: process.env.BEDROCK_AGENT_ALIAS_ID || 'TSTALIASID',
-      },
-      logRetention: logs.RetentionDays.ONE_WEEK,
-      bundling: {
-        externalModules: [],
-        minify: false,
-      },
-    });
-
-    // Grant Bedrock permissions
-    agentChatFn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
-      actions: ['bedrock:InvokeAgent'],
-      resources: ['*'],
-    }));
-
     // ─────────────────────────────────────────────────────────────
     // API Gateway
     // ─────────────────────────────────────────────────────────────
@@ -209,11 +184,6 @@ export class InnovationStack extends Construct {
     const economic = this.api.root.addResource('economic');
     const metrics = economic.addResource('metrics');
     metrics.addMethod('GET', new apigateway.LambdaIntegration(economicMetricsQueryFn));
-
-    // POST /agent/chat
-    const agent = this.api.root.addResource('agent');
-    const chat = agent.addResource('chat');
-    chat.addMethod('POST', new apigateway.LambdaIntegration(agentChatFn));
 
     // ─────────────────────────────────────────────────────────────
     // Outputs

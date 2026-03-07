@@ -12,7 +12,7 @@ export default function SessionTestPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const apiUrl = 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://eepqy4yku7.execute-api.us-east-1.amazonaws.com/prod';
         const manager = new VFSManager(apiUrl);
         await manager.init();
         setVfsManager(manager);
