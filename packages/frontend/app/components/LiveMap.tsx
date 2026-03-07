@@ -93,6 +93,13 @@ function applyMapFilter(mapEl: HTMLDivElement | null, style: MapStyle) {
   }
 }
 
+function getMaxZoomForStyle(style: MapStyle): number {
+  // AWS Location Service hosted raster styles commonly top out before 19+.
+  // When MapLibre over-zooms, it can request tiles that don't exist, producing
+  // noisy 404s even though the map may still appear to render.
+  return (style === 'satellite' || style === 'terrain') ? 18 : 19;
+}
+
 // ─────────────────────────────────────────────
 // LiveMap
 // ─────────────────────────────────────────────
@@ -112,6 +119,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
   const [selectionMode,  setSelectionMode]   = useState(false);
   const [selectedHazards, setSelectedHazards] = useState<Set<string>>(new Set());
   const selectionModeRef = useRef(false);
+  const [newHazardNotification, setNewHazardNotification] = useState<string | null>(null);
 
   const HAZARDS_SOURCE_ID = 'hazards-source';
   const HAZARDS_LAYER_ID = 'hazards-layer';
@@ -549,18 +557,79 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
     if (selectedSession) return;
     
     const handler = (event: CustomEvent) => {
-      const { type, lat, lon, confidence, timestamp } = event.detail;
-      setHazards(prev => [{
-        hazardId: makeHazardId({ geohash: 'live', timestamp, lat, lon }),
-        lat, lon, geohash: 'live',
-        hazardType: type, confidence,
-        status: 'unverified', timestamp,
-      }, ...prev]);
-
+      const { hazardType, lat, lon, confidence, timestamp, status } = event.detail;
+      
+      // Generate geohash from coordinates
+      const geohash = `live-${Date.now()}`;
+      const hazardId = makeHazardId({ geohash, timestamp, lat, lon });
+      
+      const newHazard: Hazard = {
+        hazardId,
+        lat, 
+        lon, 
+        geohash,
+        hazardType,
+        confidence,
+        status: status || 'UNVERIFIED',
+        timestamp,
+      };
+      
+      setHazards(prev => [newHazard, ...prev]);
       markHazardsHydrated();
+      
+      // Show notification
+      setNewHazardNotification(`${hazardType} detected at ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+      setTimeout(() => setNewHazardNotification(null), 3000);
+      
+      // Trigger sparkly animation
+      if (map.current) {
+        // Fly to new hazard
+        map.current.flyTo({
+          center: [lon, lat],
+          zoom: 16,
+          duration: 1000,
+        });
+        
+        // Add temporary sparkle marker with pulsing rings
+        setTimeout(() => {
+          if (!map.current) return;
+          
+          const el = document.createElement('div');
+          el.style.width = '60px';
+          el.style.height = '60px';
+          el.style.position = 'relative';
+          el.style.pointerEvents = 'none';
+          
+          // Inner glow
+          const inner = document.createElement('div');
+          inner.style.position = 'absolute';
+          inner.style.inset = '0';
+          inner.style.borderRadius = '50%';
+          inner.style.background = 'radial-gradient(circle, rgba(217,79,92,1) 0%, rgba(217,79,92,0.6) 40%, rgba(217,79,92,0) 70%)';
+          inner.style.animation = 'sparkle 2s ease-out';
+          el.appendChild(inner);
+          
+          // Outer ring
+          const outer = document.createElement('div');
+          outer.style.position = 'absolute';
+          outer.style.inset = '0';
+          outer.style.borderRadius = '50%';
+          outer.style.border = '2px solid rgba(217,79,92,0.8)';
+          outer.style.animation = 'sparkle-ring 2s ease-out';
+          el.appendChild(outer);
+          
+          const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([lon, lat])
+            .addTo(map.current!);
+          
+          // Remove after animation
+          setTimeout(() => marker.remove(), 2000);
+        }, 1000);
+      }
     };
-    window.addEventListener('hazard-detected', handler as EventListener);
-    return () => window.removeEventListener('hazard-detected', handler as EventListener);
+    
+    window.addEventListener('new-hazard-detected', handler as EventListener);
+    return () => window.removeEventListener('new-hazard-detected', handler as EventListener);
   }, [selectedSession, makeHazardId, markHazardsHydrated]);
 
   // ── Load session hazards ────────────────────
@@ -641,6 +710,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       style: styleSpec,
       center: [84.8814, 22.2604],
       zoom: 12,
+      maxZoom: getMaxZoomForStyle(settings.mapStyle),
       attributionControl: false,
     });
 
@@ -782,7 +852,8 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
     });
 
     fetchHazards();
-    const interval = setInterval(fetchHazards, 30000);
+    // Poll every 5 seconds for real-time updates
+    const interval = setInterval(fetchHazards, 5000);
 
     return () => {
       clearInterval(interval);
@@ -800,6 +871,17 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
   useEffect(() => {
     if (!map.current || !mapReady) return;
     currentStyle.current = settings.mapStyle;
+
+    // Clamp zoom for the new style before tiles start streaming.
+    const maxZoom = getMaxZoomForStyle(settings.mapStyle);
+    try {
+      (map.current as any).setMaxZoom?.(maxZoom);
+      const z = (map.current as any).getZoom?.();
+      if (typeof z === 'number' && z > maxZoom) (map.current as any).setZoom?.(maxZoom);
+    } catch {
+      // best-effort
+    }
+
     const styleSpec = getMapStyle(settings.mapStyle);
     map.current.setStyle(styleSpec);
     // Filter applied via 'styledata' event above, but also immediately:
@@ -1230,6 +1312,43 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       {/* Diff layers */}
       {mapReady && hazardsHydrated && <DiffLegend />}
       {mapReady && hazardsHydrated && <DiffMarkersLayer map={map.current} />}
+      
+      {/* New hazard notification toast */}
+      {newHazardNotification && (
+        <div style={{
+          position: 'absolute',
+          top: 60,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 20,
+          padding: '8px 16px',
+          borderRadius: 4,
+          background: 'rgba(217,79,92,0.95)',
+          border: '1px solid rgba(217,79,92,1)',
+          backdropFilter: 'blur(8px)',
+          boxShadow: '0 4px 12px rgba(217,79,92,0.4)',
+          animation: 'slideDown 0.3s ease-out',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ 
+              fontSize: '0.7rem', 
+              color: '#fff', 
+              fontFamily: "var(--v-font-mono)",
+              fontWeight: 600,
+            }}>
+              🎯 NEW HAZARD DETECTED
+            </span>
+          </div>
+          <div style={{ 
+            fontSize: '0.62rem', 
+            color: 'rgba(255,255,255,0.9)', 
+            fontFamily: "var(--v-font-mono)",
+            marginTop: 2,
+          }}>
+            {newHazardNotification}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

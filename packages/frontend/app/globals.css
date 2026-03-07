@@ -2613,3 +2613,55 @@ footer.vigia-statusbar::before {
   background-clip: text;
   color: transparent;
 }
+
+/* ─────────────────────────────────────────────
+   Sparkle animation for new hazard detection
+   ───────────────────────────────────────────── */
+@keyframes sparkle {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  20% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+@keyframes sparkle-ring {
+  0% {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(2);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(3.5);
+    opacity: 0;
+  }
+}
+
+@keyframes slideDown {
+  0% {
+    transform: translateX(-50%) translateY(-20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}
+
+.sparkle-marker {
+  animation: sparkle 2s ease-out;
+}

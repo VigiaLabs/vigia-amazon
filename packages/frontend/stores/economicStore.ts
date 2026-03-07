@@ -8,6 +8,7 @@ interface EconomicStore {
 
   fetchMetrics: (sessionId: string) => Promise<void>;
   submitMaintenanceReport: (report: Omit<MaintenanceReport, 'reportId' | 'estimatedCost'>) => Promise<void>;
+  updateMaintenanceReportStatus: (args: { reportId: string; status: MaintenanceReport['status'] }) => Promise<void>;
   fetchMaintenanceQueue: (filters?: { status?: string; geohash?: string }) => Promise<void>;
 }
 
@@ -34,8 +35,7 @@ export const useEconomicStore = create<EconomicStore>((set) => ({
   submitMaintenanceReport: async (report) => {
     set({ isLoading: true });
     try {
-      const apiEndpoint = process.env.NEXT_PUBLIC_INNOVATION_API_ENDPOINT || 'https://p4qc9upgsf.execute-api.us-east-1.amazonaws.com/prod';
-      const response = await fetch(`${apiEndpoint}/maintenance/report`, {
+      const response = await fetch('/api/maintenance/report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(report),
@@ -46,11 +46,43 @@ export const useEconomicStore = create<EconomicStore>((set) => ({
       const result = await response.json();
       console.log('[EconomicStore] Report submitted:', result);
 
+      // Optimistically show the new report in the queue immediately.
+      if (result?.reportId && typeof result?.estimatedCost === 'number') {
+        const optimistic: MaintenanceReport = {
+          ...report,
+          reportId: String(result.reportId),
+          estimatedCost: Number(result.estimatedCost),
+        };
+        set((state) => ({ maintenanceQueue: [optimistic, ...state.maintenanceQueue] }));
+      }
+
       // Refresh queue
       await useEconomicStore.getState().fetchMaintenanceQueue();
       set({ isLoading: false });
     } catch (error) {
       console.error('[EconomicStore] Failed to submit report:', error);
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  updateMaintenanceReportStatus: async ({ reportId, status }) => {
+    set({ isLoading: true });
+    try {
+      const apiEndpoint = process.env.NEXT_PUBLIC_INNOVATION_API_ENDPOINT || 'https://p4qc9upgsf.execute-api.us-east-1.amazonaws.com/prod';
+      const response = await fetch(`${apiEndpoint}/maintenance/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportId, status }),
+      });
+
+      if (!response.ok) throw new Error('Failed to update report status');
+      await response.json().catch(() => undefined);
+
+      await useEconomicStore.getState().fetchMaintenanceQueue();
+      set({ isLoading: false });
+    } catch (error) {
+      console.error('[EconomicStore] Failed to update report status:', error);
       set({ isLoading: false });
       throw error;
     }
@@ -63,8 +95,7 @@ export const useEconomicStore = create<EconomicStore>((set) => ({
       if (filters?.status) params.append('status', filters.status);
       if (filters?.geohash) params.append('geohash', filters.geohash);
 
-      const apiEndpoint = process.env.NEXT_PUBLIC_INNOVATION_API_ENDPOINT || 'https://p4qc9upgsf.execute-api.us-east-1.amazonaws.com/prod';
-      const response = await fetch(`${apiEndpoint}/maintenance/queue?${params}`);
+      const response = await fetch(`/api/maintenance/queue?${params}`);
       if (!response.ok) throw new Error('Failed to fetch queue');
 
       const queue: MaintenanceReport[] = await response.json();

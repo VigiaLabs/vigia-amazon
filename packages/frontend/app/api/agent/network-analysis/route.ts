@@ -9,51 +9,29 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { geohash, radiusKm, query, context } = body;
 
-    const agentId = process.env.NEXT_PUBLIC_BEDROCK_AGENT_ID;
-    const agentAliasId = process.env.NEXT_PUBLIC_BEDROCK_AGENT_ALIAS_ID;
-    const region = process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1';
-
-    if (!agentId || !agentAliasId) {
+    // Use API Gateway instead of direct Bedrock call
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    
+    if (!apiUrl) {
       return NextResponse.json(
-        { error: 'Agent configuration missing' },
+        { error: 'API URL not configured' },
         { status: 503 }
       );
     }
 
-    const client = new BedrockAgentRuntimeClient({ region });
-
-    // Use custom query if provided, otherwise use default
-    const inputText = query || `Analyze the DePIN network health for geohash ${geohash} within ${radiusKm || 10}km radius. Use the analyze_node_connectivity tool to get active node count, geographic spread, and health score. Also use identify_coverage_gaps to find areas with low sensor coverage.`;
-
-    const command = new InvokeAgentCommand({
-      agentId,
-      agentAliasId,
-      sessionId: `network-analysis-${Date.now()}`,
-      inputText,
-      enableTrace: true,
+    // Forward to your Lambda via API Gateway
+    const response = await fetch(`${apiUrl}/agent/network-analysis`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ geohash, radiusKm, query, context }),
     });
 
-    const response = await client.send(command);
-
-    let completion = '';
-    const traces: any[] = [];
-    
-    if (response.completion) {
-      for await (const event of response.completion) {
-        if (event.chunk?.bytes) {
-          completion += new TextDecoder().decode(event.chunk.bytes);
-        }
-        if (event.trace) {
-          traces.push(event.trace);
-        }
-      }
+    if (!response.ok) {
+      throw new Error(`API Gateway error: ${response.statusText}`);
     }
 
-    return NextResponse.json({
-      analysis: completion || 'No response from agent.',
-      sessionId: response.sessionId,
-      traces,
-    });
+    const data = await response.json();
+    return NextResponse.json(data);
   } catch (err: any) {
     console.error('[network-analysis] Error:', err);
     return NextResponse.json(

@@ -253,6 +253,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [metricsLoading, setMetricsLoading] = useState(true);
   const hasLoadedMetricsRef = useRef(false);
+  const [hasCloudMetrics, setHasCloudMetrics] = useState(false);
   const [vfsManager, setVfsManager] = useState<VFSManager | null>(null);
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
@@ -312,6 +313,7 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
         const res = await fetch('/api/metrics/dashboard');
         if (res.ok) {
           const data = await res.json();
+          setHasCloudMetrics(true);
           setMetrics({
             verifiedHazards: data.hazards?.verified || 0,
             unverifiedHazards: data.hazards?.pending || 0,
@@ -324,6 +326,9 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
               ? Math.round((data.hazards?.total || 0) / data.network.coverageAreaKm2 * 100) / 100
               : 0,
           });
+        } else {
+          // Don’t render potentially misleading defaults if the cloud endpoint is unavailable.
+          console.warn('Sidebar metrics endpoint returned non-OK:', res.status);
         }
       } catch (error) {
         console.error('Failed to fetch sidebar metrics:', error);
@@ -411,72 +416,6 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
       
       const allSessions = [...uniqueTempSessions, ...savedSessions];
       setSessions(allSessions);
-      
-      // Calculate metrics
-      const verified = allSessions.reduce((sum, s) => sum + (s.verifiedCount || 0), 0);
-      const total = allSessions.reduce((sum, s) => sum + (s.hazardCount || 0), 0);
-      const unverified = total - verified;
-      
-      // Count unique contributors (nodes) and analyze hazards
-      const uniqueContributors = new Set<string>();
-      let totalAreaKm2 = 0;
-      let criticalCount = 0;
-      let totalSeverity = 0;
-      let severityCount = 0;
-      const now = Date.now();
-      const last24h = now - (24 * 60 * 60 * 1000);
-      let recentCount = 0;
-      
-      tempFiles.forEach((file: any) => {
-        file.hazards?.forEach((h: any) => {
-          if (h.signature) uniqueContributors.add(h.signature);
-          
-          // Critical hazards (severity >= 0.8 or type ACCIDENT/FLOODING)
-          if (h.severity >= 0.8 || h.type === 'ACCIDENT' || h.type === 'FLOODING') {
-            criticalCount++;
-          }
-          
-          // Average severity
-          if (typeof h.severity === 'number') {
-            totalSeverity += h.severity;
-            severityCount++;
-          }
-          
-          // Recent activity (last 24 hours)
-          if (h.timestamp && h.timestamp > last24h) {
-            recentCount++;
-          }
-        });
-        
-        if (file.coverage?.areaKm2) {
-          totalAreaKm2 += file.coverage.areaKm2;
-        }
-      });
-      
-      const avgSeverity = severityCount > 0 ? totalSeverity / severityCount : 0;
-      const hazardDensity = totalAreaKm2 > 0 ? total / totalAreaKm2 : 0;
-      
-      setMetrics({
-        verifiedHazards: verified,
-        unverifiedHazards: unverified,
-        activeNodes: uniqueContributors.size,
-        coverageAreaKm2: Math.round(totalAreaKm2),
-        criticalHazards: criticalCount,
-        avgSeverity: Math.round(avgSeverity * 100) / 100,
-        recentActivity: recentCount,
-        hazardDensity: Math.round(hazardDensity * 100) / 100,
-      });
-      
-      console.log('📊 Metrics calculated:', {
-        verified,
-        unverified,
-        activeNodes: uniqueContributors.size,
-        criticalCount,
-        avgSeverity,
-        recentCount,
-        hazardDensity,
-        totalFiles: tempFiles.length,
-      });
     } catch (err) {
       console.error('Failed to load sessions:', err);
     } finally {
@@ -1143,111 +1082,108 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
             <>
               <div style={{ height: 1, background: 'var(--v-panel-border)', margin: '8px 10px 4px' }} />
               <div className="exp-section-lbl">Pinned</div>
-              
-              {/* Debug: Always show at least Active Hazards */}
-              <button className="exp-pinned-btn" title="Active Hazards metric">
-                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
-                  <AlertTriangle size={13} style={{ color: C.accent }} />
-                </span>
-                <span className="exp-pinned-btn__label">Active Hazards</span>
-                {renderPinnedMetricBadge({
-                  loadingWidth: 64,
-                  loadingIndex: 0,
-                  background: C.accentBg,
-                  color: C.accent,
-                  children: <>{metrics.verifiedHazards}v / {metrics.unverifiedHazards}u</>,
-                })}
-              </button>
 
-              {/* Active Nodes - Always visible */}
-              <button className="exp-pinned-btn" title="Active monitoring nodes">
-                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
-                  <Activity size={13} style={{ color: C.accent }} />
-                </span>
-                <span className="exp-pinned-btn__label">Active Nodes</span>
-                {renderPinnedMetricBadge({
-                  loadingWidth: 32,
-                  loadingIndex: 1,
-                  background: C.accentBg,
-                  color: C.accent,
-                  children: <>{metrics.activeNodes}</>,
-                })}
-              </button>
+              {(metricsLoading || hasCloudMetrics) && (
+                <>
+                  <button className="exp-pinned-btn" title="Active Hazards metric">
+                    <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                      <AlertTriangle size={13} style={{ color: C.accent }} />
+                    </span>
+                    <span className="exp-pinned-btn__label">Active Hazards</span>
+                    {renderPinnedMetricBadge({
+                      loadingWidth: 64,
+                      loadingIndex: 0,
+                      background: C.accentBg,
+                      color: C.accent,
+                      children: <>{metrics.verifiedHazards}v / {metrics.unverifiedHazards}u</>,
+                    })}
+                  </button>
 
-              {/* Critical Hazards - Always visible */}
-              <button className="exp-pinned-btn" title="High-severity hazards">
-                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
-                  <AlertTriangle size={13} style={{ color: C.accent }} />
-                </span>
-                <span className="exp-pinned-btn__label">Critical Hazards</span>
-                {renderPinnedMetricBadge({
-                  loadingWidth: 32,
-                  loadingIndex: 2,
-                  background: C.accentBg,
-                  color: C.accent,
-                  children: <>{metrics.criticalHazards}</>,
-                })}
-              </button>
+                  <button className="exp-pinned-btn" title="Active monitoring nodes">
+                    <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                      <Activity size={13} style={{ color: C.accent }} />
+                    </span>
+                    <span className="exp-pinned-btn__label">Active Nodes</span>
+                    {renderPinnedMetricBadge({
+                      loadingWidth: 32,
+                      loadingIndex: 1,
+                      background: C.accentBg,
+                      color: C.accent,
+                      children: <>{metrics.activeNodes}</>,
+                    })}
+                  </button>
 
-              {/* Recent Activity (24h) - Always visible */}
-              <button className="exp-pinned-btn" title="Hazards detected in last 24 hours">
-                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
-                  <Activity size={13} style={{ color: C.accent }} />
-                </span>
-                <span className="exp-pinned-btn__label">Recent (24h)</span>
-                {renderPinnedMetricBadge({
-                  loadingWidth: 32,
-                  loadingIndex: 3,
-                  background: C.accentBg,
-                  color: C.accent,
-                  children: <>{metrics.recentActivity}</>,
-                })}
-              </button>
+                  <button className="exp-pinned-btn" title="High-severity hazards">
+                    <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                      <AlertTriangle size={13} style={{ color: C.accent }} />
+                    </span>
+                    <span className="exp-pinned-btn__label">Critical Hazards</span>
+                    {renderPinnedMetricBadge({
+                      loadingWidth: 32,
+                      loadingIndex: 2,
+                      background: C.accentBg,
+                      color: C.accent,
+                      children: <>{metrics.criticalHazards}</>,
+                    })}
+                  </button>
 
-              {/* Coverage Area - Always visible */}
-              <button className="exp-pinned-btn" title="Total monitored area">
-                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
-                  <MapPin size={13} style={{ color: C.accent }} />
-                </span>
-                <span className="exp-pinned-btn__label">Coverage Area</span>
-                {renderPinnedMetricBadge({
-                  loadingWidth: 56,
-                  loadingIndex: 4,
-                  background: C.accentBg,
-                  color: C.accent,
-                  children: <>{metrics.coverageAreaKm2} km²</>,
-                })}
-              </button>
+                  <button className="exp-pinned-btn" title="Hazards detected in last 24 hours">
+                    <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                      <Activity size={13} style={{ color: C.accent }} />
+                    </span>
+                    <span className="exp-pinned-btn__label">Recent (24h)</span>
+                    {renderPinnedMetricBadge({
+                      loadingWidth: 32,
+                      loadingIndex: 3,
+                      background: C.accentBg,
+                      color: C.accent,
+                      children: <>{metrics.recentActivity}</>,
+                    })}
+                  </button>
 
-              {/* Hazard Density - Always visible */}
-              <button className="exp-pinned-btn" title="Hazards per square kilometer">
-                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
-                  <MapPin size={13} style={{ color: C.accent }} />
-                </span>
-                <span className="exp-pinned-btn__label">Hazard Density</span>
-                {renderPinnedMetricBadge({
-                  loadingWidth: 56,
-                  loadingIndex: 5,
-                  background: C.accentBg,
-                  color: C.accent,
-                  children: <>{metrics.hazardDensity}/km²</>,
-                })}
-              </button>
+                  <button className="exp-pinned-btn" title="Total monitored area">
+                    <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                      <MapPin size={13} style={{ color: C.accent }} />
+                    </span>
+                    <span className="exp-pinned-btn__label">Coverage Area</span>
+                    {renderPinnedMetricBadge({
+                      loadingWidth: 56,
+                      loadingIndex: 4,
+                      background: C.accentBg,
+                      color: C.accent,
+                      children: <>{metrics.coverageAreaKm2} km²</>,
+                    })}
+                  </button>
 
-              {/* Average Severity - Always visible */}
-              <button className="exp-pinned-btn" title="Mean severity across all hazards">
-                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
-                  <AlertTriangle size={13} style={{ color: C.accent }} />
-                </span>
-                <span className="exp-pinned-btn__label">Avg Severity</span>
-                {renderPinnedMetricBadge({
-                  loadingWidth: 42,
-                  loadingIndex: 6,
-                  background: C.accentBg,
-                  color: C.accent,
-                  children: <>{(metrics.avgSeverity * 100).toFixed(0)}%</>,
-                })}
-              </button>
+                  <button className="exp-pinned-btn" title="Hazards per square kilometer">
+                    <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                      <MapPin size={13} style={{ color: C.accent }} />
+                    </span>
+                    <span className="exp-pinned-btn__label">Hazard Density</span>
+                    {renderPinnedMetricBadge({
+                      loadingWidth: 56,
+                      loadingIndex: 5,
+                      background: C.accentBg,
+                      color: C.accent,
+                      children: <>{metrics.hazardDensity}/km²</>,
+                    })}
+                  </button>
+
+                  <button className="exp-pinned-btn" title="Mean severity across all hazards">
+                    <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                      <AlertTriangle size={13} style={{ color: C.accent }} />
+                    </span>
+                    <span className="exp-pinned-btn__label">Avg Severity</span>
+                    {renderPinnedMetricBadge({
+                      loadingWidth: 42,
+                      loadingIndex: 6,
+                      background: C.accentBg,
+                      color: C.accent,
+                      children: <>{(metrics.avgSeverity * 100).toFixed(0)}%</>,
+                    })}
+                  </button>
+                </>
+              )}
 
               {/* Pinned Sessions */}
               {Array.from(pinnedSessions).map(sessionId => {

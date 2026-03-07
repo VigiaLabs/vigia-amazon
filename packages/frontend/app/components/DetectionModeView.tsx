@@ -220,7 +220,7 @@ export function DetectionModeView() {
             color: C.textMut,
             fontFamily: "var(--v-font-mono)",
           }}>
-            Unverified Hazards
+            Unverified Hazards · Real-time
           </span>
           <div style={{ 
             marginLeft: 'auto',

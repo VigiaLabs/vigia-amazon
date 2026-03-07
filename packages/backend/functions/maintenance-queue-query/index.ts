@@ -5,6 +5,15 @@ import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from '@aws-sdk/lib-
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
+function corsHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  };
+}
+
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     const status = event.queryStringParameters?.status;
@@ -49,14 +58,14 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(result.Items || []),
+      headers: corsHeaders(),
+      body: JSON.stringify((result.Items || []).sort((a: any, b: any) => (Number(b?.reportedAt) || 0) - (Number(a?.reportedAt) || 0))),
     };
   } catch (error) {
     console.error('[MaintenanceQueueQuery] Error:', error);
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: corsHeaders(),
       body: JSON.stringify({ error: 'Internal server error' }),
     };
   }

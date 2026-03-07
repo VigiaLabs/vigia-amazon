@@ -3,12 +3,19 @@
 import { useEconomicStore } from '@/stores/economicStore';
 import { useEffect, useState } from 'react';
 import { AgentChatPanel } from './AgentChatPanel';
+import type { MaintenanceReport } from '@/types/shared';
 
 export function MaintenancePanel() {
-  const { maintenanceQueue, isLoading, submitMaintenanceReport } = useEconomicStore();
+  const { maintenanceQueue, isLoading, submitMaintenanceReport, fetchMaintenanceQueue, updateMaintenanceReportStatus } = useEconomicStore();
   const [selectedHazard, setSelectedHazard] = useState<any>(null);
   const [notes, setNotes] = useState('');
   const [queuedHazards, setQueuedHazards] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Load the current queue on entry.
+    fetchMaintenanceQueue().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Hydrate queue from sessionStorage (session-only; cleared on browser restart)
@@ -201,7 +208,7 @@ export function MaintenancePanel() {
           <div style={{ fontSize: '0.7rem', color: C.textSec, fontWeight: 600, marginBottom: 8 }}>
             Maintenance Queue ({maintenanceQueue.length})
           </div>
-          {maintenanceQueue.slice(0, 10).map((report) => (
+          {maintenanceQueue.slice(0, 10).map((report: MaintenanceReport) => (
             <div
               key={report.reportId}
               style={{
@@ -214,18 +221,39 @@ export function MaintenancePanel() {
                 fontFamily: "var(--v-font-mono)",
               }}
             >
-              <div style={{ color: C.text }}>{report.type} - ${report.estimatedCost}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ color: C.text }}>{report.type} - ${report.estimatedCost}</div>
+                {report.status !== 'COMPLETED' && report.status !== 'REJECTED' && (
+                  <button
+                    onClick={() => updateMaintenanceReportStatus({ reportId: report.reportId, status: 'COMPLETED' }).catch(() => undefined)}
+                    disabled={isLoading}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '0.6rem',
+                      background: 'transparent',
+                      border: `1px solid var(--v-border-default)`,
+                      borderRadius: 3,
+                      color: C.textSec,
+                      cursor: isLoading ? 'not-allowed' : 'pointer',
+                      opacity: isLoading ? 0.6 : 1,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Mark finished
+                  </button>
+                )}
+              </div>
               <div style={{ color: C.textMut }}>{report.geohash}</div>
               <div style={{
                 display: 'inline-block',
                 marginTop: 4,
                 padding: '2px 6px',
-                background: report.status === 'PENDING' ? 'rgba(234,179,8,0.15)' : 'rgba(34,197,94,0.15)',
-                color: report.status === 'PENDING' ? '#EAB308' : '#22C55E',
+                background: report.status === 'COMPLETED' ? 'rgba(34,197,94,0.15)' : 'rgba(96,165,250,0.15)',
+                color: report.status === 'COMPLETED' ? '#22C55E' : '#60A5FA',
                 borderRadius: 2,
                 fontSize: '0.6rem',
               }}>
-                {report.status}
+                {report.status === 'COMPLETED' ? 'FINISHED' : report.status === 'REJECTED' ? 'REJECTED' : 'ACTIVE'}
               </div>
             </div>
           ))}

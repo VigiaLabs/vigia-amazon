@@ -6,6 +6,14 @@ const lib_dynamodb_1 = require("@aws-sdk/lib-dynamodb");
 const crypto_1 = require("crypto");
 const dynamoClient = new client_dynamodb_1.DynamoDBClient({});
 const docClient = lib_dynamodb_1.DynamoDBDocumentClient.from(dynamoClient);
+function corsHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    };
+}
 const BASE_COSTS = {
     POTHOLE: 150,
     DEBRIS: 50,
@@ -22,14 +30,58 @@ function calculateRepairCost(type, severity) {
     const baseCost = BASE_COSTS[type] || 0;
     return Math.round(baseCost * (1 + severity * 0.2));
 }
+const ALLOWED_STATUSES = new Set(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'REJECTED']);
 const handler = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
-        const { hazardId, geohash, type, severity, reportedBy, notes, signature } = body;
+        const { hazardId, geohash, type, severity, reportedBy, notes, signature, reportId: reportIdInput, status } = body;
+        // Status update mode (reuses the same endpoint to avoid extra API Gateway/Lambda wiring).
+        if (reportIdInput && status && !hazardId && !geohash) {
+            if (!ALLOWED_STATUSES.has(status)) {
+                return {
+                    statusCode: 400,
+                    headers: corsHeaders(),
+                    body: JSON.stringify({ error: 'Invalid status' }),
+                };
+            }
+            const existing = await docClient.send(new lib_dynamodb_1.QueryCommand({
+                TableName: process.env.MAINTENANCE_QUEUE_TABLE,
+                KeyConditionExpression: 'reportId = :rid',
+                ExpressionAttributeValues: {
+                    ':rid': reportIdInput,
+                },
+                Limit: 1,
+            }));
+            const item = ((existing.Items || [])[0]);
+            if (!(item === null || item === void 0 ? void 0 : item.reportId) || typeof (item === null || item === void 0 ? void 0 : item.reportedAt) !== 'number') {
+                return {
+                    statusCode: 404,
+                    headers: corsHeaders(),
+                    body: JSON.stringify({ error: 'Report not found' }),
+                };
+            }
+            await docClient.send(new lib_dynamodb_1.UpdateCommand({
+                TableName: process.env.MAINTENANCE_QUEUE_TABLE,
+                Key: { reportId: item.reportId, reportedAt: item.reportedAt },
+                UpdateExpression: 'SET #status = :status, updatedAt = :now' + (status === 'COMPLETED' ? ', completedAt = :now' : ''),
+                ExpressionAttributeNames: {
+                    '#status': 'status',
+                },
+                ExpressionAttributeValues: {
+                    ':status': status,
+                    ':now': Date.now(),
+                },
+            }));
+            return {
+                statusCode: 200,
+                headers: corsHeaders(),
+                body: JSON.stringify({ reportId: item.reportId, reportedAt: item.reportedAt, status }),
+            };
+        }
         if (!hazardId || !geohash || !type || !severity || !reportedBy || !signature) {
             return {
                 statusCode: 400,
-                headers: { 'Content-Type': 'application/json' },
+                headers: corsHeaders(),
                 body: JSON.stringify({ error: 'Missing required fields' }),
             };
         }
@@ -78,7 +130,7 @@ const handler = async (event) => {
         }
         return {
             statusCode: 201,
-            headers: { 'Content-Type': 'application/json' },
+            headers: corsHeaders(),
             body: JSON.stringify({ reportId, estimatedCost }),
         };
     }
@@ -86,7 +138,7 @@ const handler = async (event) => {
         console.error('[MaintenanceReportHandler] Error:', error);
         return {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' },
+            headers: corsHeaders(),
             body: JSON.stringify({ error: 'Internal server error' }),
         };
     }

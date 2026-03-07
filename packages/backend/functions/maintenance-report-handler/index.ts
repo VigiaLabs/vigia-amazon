@@ -1,10 +1,19 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
+
+function corsHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  };
+}
 
 const BASE_COSTS: Record<string, number> = {
   POTHOLE: 150,
@@ -25,15 +34,65 @@ function calculateRepairCost(type: string, severity: number): number {
   return Math.round(baseCost * (1 + severity * 0.2));
 }
 
+const ALLOWED_STATUSES = new Set(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'REJECTED'] as const);
+
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     const body = JSON.parse(event.body || '{}');
-    const { hazardId, geohash, type, severity, reportedBy, notes, signature } = body;
+    const { hazardId, geohash, type, severity, reportedBy, notes, signature, reportId: reportIdInput, status } = body;
+
+    // Status update mode (reuses the same endpoint to avoid extra API Gateway/Lambda wiring).
+    if (reportIdInput && status && !hazardId && !geohash) {
+      if (!ALLOWED_STATUSES.has(status)) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders(),
+          body: JSON.stringify({ error: 'Invalid status' }),
+        };
+      }
+
+      const existing = await docClient.send(new QueryCommand({
+        TableName: process.env.MAINTENANCE_QUEUE_TABLE!,
+        KeyConditionExpression: 'reportId = :rid',
+        ExpressionAttributeValues: {
+          ':rid': reportIdInput,
+        },
+        Limit: 1,
+      }));
+
+      const item = (existing.Items || [])[0] as any;
+      if (!item?.reportId || typeof item?.reportedAt !== 'number') {
+        return {
+          statusCode: 404,
+          headers: corsHeaders(),
+          body: JSON.stringify({ error: 'Report not found' }),
+        };
+      }
+
+      await docClient.send(new UpdateCommand({
+        TableName: process.env.MAINTENANCE_QUEUE_TABLE!,
+        Key: { reportId: item.reportId, reportedAt: item.reportedAt },
+        UpdateExpression: 'SET #status = :status, updatedAt = :now' + (status === 'COMPLETED' ? ', completedAt = :now' : ''),
+        ExpressionAttributeNames: {
+          '#status': 'status',
+        },
+        ExpressionAttributeValues: {
+          ':status': status,
+          ':now': Date.now(),
+        },
+      }));
+
+      return {
+        statusCode: 200,
+        headers: corsHeaders(),
+        body: JSON.stringify({ reportId: item.reportId, reportedAt: item.reportedAt, status }),
+      };
+    }
 
     if (!hazardId || !geohash || !type || !severity || !reportedBy || !signature) {
       return {
         statusCode: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: corsHeaders(),
         body: JSON.stringify({ error: 'Missing required fields' }),
       };
     }
@@ -87,14 +146,14 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     return {
       statusCode: 201,
-      headers: { 'Content-Type': 'application/json' },
+      headers: corsHeaders(),
       body: JSON.stringify({ reportId, estimatedCost }),
     };
   } catch (error) {
     console.error('[MaintenanceReportHandler] Error:', error);
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: corsHeaders(),
       body: JSON.stringify({ error: 'Internal server error' }),
     };
   }

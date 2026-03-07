@@ -79,7 +79,7 @@ const handler = async (event) => {
                 lon: payload.lon,
                 confidence: payload.confidence,
                 signature: payload.signature,
-                status: 'pending',
+                status: 'UNVERIFIED', // Changed from 'pending' to match UI expectations
                 ttl: Math.floor(Date.now() / 1000) + 86400 * 30, // 30 days
             },
         }));

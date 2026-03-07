@@ -230,11 +230,13 @@ export function VideoUploader() {
   const [detectionCount,  setDetectionCount]  = useState(0);
   const [currentDetection, setCurrentDetection] = useState<SignedTelemetry | null>(null);
   const [totalSent,       setTotalSent]       = useState(0);
+  const [isSending,       setIsSending]       = useState(false);
   const [videoReady,      setVideoReady]      = useState(false);
   const [videoLoading,    setVideoLoading]    = useState(false);
   const [videoError,      setVideoError]      = useState<string | null>(null);
   const [videoDuration,   setVideoDuration]   = useState<number>(0);
   const [videoElement,    setVideoElement]    = useState<HTMLVideoElement | null>(null);
+  const [videoAspectRatio, setVideoAspectRatio] = useState<string>('16 / 9');
   const [userLocation,    setUserLocation]    = useState<{ lat: number; lon: number } | null>(null);
   const [locationStatus,  setLocationStatus]  = useState<'loading' | 'success' | 'error' | 'denied'>('loading');
 
@@ -248,6 +250,51 @@ export function VideoUploader() {
   
   // Get current GPS location (user's real location or fallback)
   const currentGPS = userLocation || fallbackGPS;
+
+  // Send detection to cloud
+  const sendToCloud = async (detection: SignedTelemetry) => {
+    try {
+      setIsSending(true);
+      const apiUrl = process.env.NEXT_PUBLIC_TELEMETRY_API_URL || process.env.NEXT_PUBLIC_API_URL;
+      if (!apiUrl) {
+        console.warn('[VideoUploader] No API URL configured');
+        return;
+      }
+
+      const response = await fetch(`${apiUrl}/telemetry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hazardType: detection.hazardType,
+          lat: detection.lat,
+          lon: detection.lon,
+          confidence: detection.confidence,
+          timestamp: detection.timestamp,
+          signature: detection.signature,
+        }),
+      });
+
+      if (response.ok) {
+        setTotalSent(prev => prev + 1);
+        
+        // Emit event for LiveMap to catch
+        window.dispatchEvent(new CustomEvent('new-hazard-detected', {
+          detail: {
+            hazardType: detection.hazardType,
+            lat: detection.lat,
+            lon: detection.lon,
+            confidence: detection.confidence,
+            timestamp: detection.timestamp,
+            status: 'UNVERIFIED',
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('[VideoUploader] Failed to send telemetry:', error);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   // Request browser geolocation on mount
   useEffect(() => {
@@ -290,6 +337,7 @@ export function VideoUploader() {
     setVideoLoading(true);
     setVideoError(null);
     setVideoDuration(0);
+    setVideoAspectRatio('16 / 9');
     setDetectionCount(0);
     setTelemetryBatch([]);
     setCurrentDetection(null);
@@ -314,6 +362,13 @@ export function VideoUploader() {
     const handleLoadedMetadata = () => {
       console.log('[VideoUploader] Metadata loaded, dimensions:', video.videoWidth, 'x', video.videoHeight);
       setVideoDuration(video.duration);
+
+      // Dynamically match wrapper aspect ratio to the uploaded video.
+      // This prevents forced letterboxing from a fixed 16:9 container and
+      // keeps overlay math stable for any input dimensions.
+      if (video.videoWidth && video.videoHeight) {
+        setVideoAspectRatio(`${video.videoWidth} / ${video.videoHeight}`);
+      }
     };
     
     const handleCanPlay = () => {
@@ -385,25 +440,50 @@ export function VideoUploader() {
     const canvas = canvasRef.current;
     const video  = videoRef.current;
     const ctx    = canvas.getContext('2d')!;
-    canvas.width  = video.clientWidth;
-    canvas.height = video.clientHeight;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Canvas should be sized in *device pixels* but drawn in *CSS pixels*
+    const rect = video.getBoundingClientRect();
+    const cssW = Math.max(1, Math.round(rect.width));
+    const cssH = Math.max(1, Math.round(rect.height));
+    const dpr  = (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1;
+
+    canvas.width  = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+
+    // Reset transform so line widths/shadows look consistent
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    // Map bbox (original video pixels) → CSS pixels within the visible content rect
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+
+    // objectFit: 'contain' inside a fixed aspect-ratio wrapper introduces letterboxing.
+    const scale = Math.min(cssW / vw, cssH / vh);
+    const contentW = vw * scale;
+    const contentH = vh * scale;
+    const offX = (cssW - contentW) / 2;
+    const offY = (cssH - contentH) / 2;
 
     if (currentDetection?.bbox) {
       const { x, y, width, height } = currentDetection.bbox;
       
       console.log('[VideoUploader] Drawing bbox:', { x, y, width, height });
-      console.log('[VideoUploader] Video dimensions:', video.videoWidth, 'x', video.videoHeight);
-      console.log('[VideoUploader] Canvas dimensions:', canvas.width, 'x', canvas.height);
-      
-      // Bbox is already in original video dimensions, scale to canvas display size
-      const scaleX = canvas.width / video.videoWidth;
-      const scaleY = canvas.height / video.videoHeight;
-      
-      const x1 = x * scaleX;
-      const y1 = y * scaleY;
-      const w  = width * scaleX;
-      const h  = height * scaleY;
+
+      // Clamp bbox to original video bounds to avoid negative/overflow draws
+      const x0 = Math.max(0, Math.min(vw, x));
+      const y0 = Math.max(0, Math.min(vh, y));
+      const x2 = Math.max(0, Math.min(vw, x + width));
+      const y2 = Math.max(0, Math.min(vh, y + height));
+      const bw = Math.max(0, x2 - x0);
+      const bh = Math.max(0, y2 - y0);
+
+      // Original video px → visible content rect in CSS px
+      const x1 = offX + x0 * scale;
+      const y1 = offY + y0 * scale;
+      const w  = bw * scale;
+      const h  = bh * scale;
       
       console.log('[VideoUploader] Scaled bbox:', { x1, y1, w, h });
 
@@ -434,9 +514,10 @@ export function VideoUploader() {
       ctx.font = "9px 'IBM Plex Mono', monospace";
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = '#2B2D30';
-      ctx.fillRect(x1, y1 - 16, tw + 8, 14);
+      const ly = Math.max(2, y1 - 16);
+      ctx.fillRect(x1, ly, tw + 8, 14);
       ctx.fillStyle = '#9A72A2';
-      ctx.fillText(label, x1 + 4, y1 - 5);
+      ctx.fillText(label, x1 + 4, ly + 11);
     }
   };
 
@@ -466,7 +547,7 @@ export function VideoUploader() {
           setDetectionCount(prev => prev + 1);
           setCurrentDetection(result);
           
-          // Emit hazard detection event
+          // Emit for verification panel
           window.dispatchEvent(new CustomEvent('hazard-detected', {
             detail: {
               type: result.hazardType,
@@ -476,6 +557,9 @@ export function VideoUploader() {
               timestamp: result.timestamp,
             }
           }));
+          
+          // Send to cloud immediately
+          sendToCloud(result);
           
           setTimeout(() => setCurrentDetection(null), 100);
         }
@@ -489,7 +573,10 @@ export function VideoUploader() {
   const stopProcessing = () => {
     setIsProcessing(false);
     videoRef.current?.pause();
-    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
   };
 
   useEffect(() => { drawDetections(); }, [currentDetection]);
@@ -538,6 +625,20 @@ export function VideoUploader() {
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.red }} className="pulse" />
             <span style={{ fontSize: '0.65rem', color: C.red, fontFamily: FONT, fontWeight: 500 }}>
               SCANNING
+            </span>
+          </div>
+        )}
+        
+        {isSending && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 8px', borderRadius: 3,
+            background: 'var(--c-green-dim)',
+            border: `1px solid ${C.border}`,
+          }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.green }} className="pulse" />
+            <span style={{ fontSize: '0.65rem', color: C.green, fontFamily: FONT, fontWeight: 500 }}>
+              SENDING
             </span>
           </div>
         )}
@@ -649,6 +750,7 @@ export function VideoUploader() {
                   setVideoLoading(false);
                   setVideoError(null);
                   setVideoDuration(0);
+                  setVideoAspectRatio('16 / 9');
                   stopProcessing(); 
                 }}
                 style={{
@@ -663,7 +765,7 @@ export function VideoUploader() {
             </div>
 
             {/* Video canvas */}
-            <div style={{ position: 'relative', background: 'var(--c-bg)', aspectRatio: '16/9' }}>
+            <div style={{ position: 'relative', background: 'var(--c-bg)', aspectRatio: videoAspectRatio }}>
               <video 
                 ref={videoCallbackRef} 
                 playsInline

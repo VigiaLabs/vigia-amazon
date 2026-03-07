@@ -5,6 +5,14 @@ const client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
 const lib_dynamodb_1 = require("@aws-sdk/lib-dynamodb");
 const dynamoClient = new client_dynamodb_1.DynamoDBClient({});
 const docClient = lib_dynamodb_1.DynamoDBDocumentClient.from(dynamoClient);
+function corsHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    };
+}
 const handler = async (event) => {
     try {
         const status = event.queryStringParameters?.status;
@@ -48,15 +56,15 @@ const handler = async (event) => {
         }
         return {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(result.Items || []),
+            headers: corsHeaders(),
+            body: JSON.stringify((result.Items || []).sort((a, b) => (Number(b === null || b === void 0 ? void 0 : b.reportedAt) || 0) - (Number(a === null || a === void 0 ? void 0 : a.reportedAt) || 0))),
         };
     }
     catch (error) {
         console.error('[MaintenanceQueueQuery] Error:', error);
         return {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' },
+            headers: corsHeaders(),
             body: JSON.stringify({ error: 'Internal server error' }),
         };
     }
