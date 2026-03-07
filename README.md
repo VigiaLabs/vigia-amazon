@@ -37,7 +37,6 @@ VIGIA IDE treats road infrastructure like infrastructure-as-code, turning hazard
 - [Getting started](#getting-started)
 - [Core features](#core-features)
 - [Data infrastructure](#data-infrastructure)
-- [Performance metrics](#performance-metrics)
 - [Security architecture](#security-architecture)
 - [Competition context](#competition-context)
 - [Future roadmap](#future-roadmap)
@@ -215,6 +214,7 @@ Event-driven architecture with change data capture. New hazards automatically tr
 ---
 
 ## Kiro Spec-Driven Development
+<img width="611" height="306" alt="image" src="https://github.com/user-attachments/assets/490abbd9-9e50-4a7e-a59d-20a4908db331" />
 
 ### Documentation Structure
 
@@ -429,6 +429,7 @@ Maintenance queue with repair reports, cost estimation ($500/pothole, $5K/accide
 **6. EconomicMetricsTable** (Innovation Stack)
 - PK: `sessionId`, SK: `timestamp`
 - Attributes: totalHazards, verifiedCount, estimatedSavings, roi
+<img width="1570" height="2182" alt="image" src="https://github.com/user-attachments/assets/6b0671bd-4d2e-4373-9525-aeebe26df399" />
 
 ### 15 Lambda Functions
 
@@ -437,22 +438,6 @@ Maintenance queue with repair reports, cost estimation ($500/pothole, $5K/accide
 **Trust** (1): Ledger Writer  
 **Innovation** (3): Maintenance Reporter, Economic Calculator, Trace Streamer
 
----
-
-## Performance Metrics
-
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Diff Computation | <2s | 1.2s | Met (40% faster) |
-| Branch Rendering | 60fps | 60fps | Met |
-| ReAct Streaming | <500ms | 320ms | Met (36% faster) |
-| ROI Update | <1s | 450ms | Met (55% faster) |
-| Step Functions | <5s | 206ms | Met (96% faster) |
-| Route Calculation | <1s | 355ms | Met (65% faster) |
-
-**Load Testing**: 500 concurrent users, 99.8% success rate, p95 latency 650ms
-
----
 
 ## Security Architecture
 
@@ -500,6 +485,7 @@ Maintenance queue with repair reports, cost estimation ($500/pothole, $5K/accide
 
 ### Phase 1: Production Hardening
 Implement authentication, pricing tiers, careful rate limits, domain name, end to end connectivity, data privacy.
+Also implement full copilot like capability to agent, fasten workflows, enhance productivity.
 
 ### Phase 2: Mobile SDK
 Native iOS/Android libraries, real-time GPS integration, background detection mode, offline queue with sync.
@@ -524,7 +510,9 @@ Replace DynamoDB ledger with Ethereum L2, smart contracts for DePIN rewards, tok
 
 ## Contributors
 - [ben-biju](https://github.com/ben-biju)
-
+<a href="https://github.com/BlueWaves-afk/vigia-amazon/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=BlueWaves-afk/vigia-amazon" />
+</a>
 ---
 
 ## License
