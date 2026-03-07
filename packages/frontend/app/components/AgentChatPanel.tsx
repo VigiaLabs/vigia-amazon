@@ -197,7 +197,16 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
     if (contextType === 'network') {
       (window as any).__networkAgentTrigger = () => {
         const ctx = (window as any).__networkAgentContext;
-        if (ctx) { setCollapsed(false); sendQuery(ctx); }
+        if (ctx) { 
+          setCollapsed(false); 
+          // If ctx is an object with query field, extract it
+          if (typeof ctx === 'object' && ctx.query) {
+            sendQuery(ctx.query, ctx);
+          } else {
+            // Legacy: ctx is just a string
+            sendQuery(ctx);
+          }
+        }
       };
       return () => {
         delete (window as any).__networkAgentTrigger;
@@ -400,8 +409,42 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
         }
         
         const data = await res.json();
+        const rawTraces: any[] = data.traces ?? [];
+        const thinkStart = Date.now();
+
+        // Add assistant placeholder immediately so the thinking section appears
+        const assistantId = mkId();
+        setMessages(prev => [...prev, {
+          id: assistantId, role: 'assistant', content: '',
+          timestamp: Date.now(), traces: [],
+          isThinking: rawTraces.length > 0,
+        }]);
+
+        // Auto-expand trace section while thinking is in progress
+        if (rawTraces.length > 0) {
+          setExpandedTraces(prev => new Set([...prev, assistantId]));
+        }
+
+        // Reveal traces one-by-one to simulate streaming
+        for (const traceText of rawTraces) {
+          await new Promise(r => setTimeout(r, 280 + Math.random() * 320));
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId ? { 
+              ...m, 
+              traces: [...(m.traces || []), { 
+                id: mkId(), 
+                text: typeof traceText === 'string' ? traceText : JSON.stringify(traceText, null, 2) 
+              }] 
+            } : m
+          ));
+        }
+
+        // After traces, show final content
         const content = data.analysis ?? data.message ?? JSON.stringify(data);
-        setMessages(prev => [...prev, { id: mkId(), role: 'assistant', content, timestamp: Date.now() }]);
+        await new Promise(r => setTimeout(r, 400));
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId ? { ...m, content, isThinking: false } : m
+        ));
       } else if (contextType === 'livemap' && isUrbanPlanning) {
         // Use urban-planning API for path/route queries
         const attachCtx = attachments.reduce<Record<string, any>>((acc, a) => ({ ...acc, ...a.data }), {});

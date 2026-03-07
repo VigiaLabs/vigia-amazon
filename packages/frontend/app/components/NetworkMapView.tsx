@@ -504,8 +504,13 @@ export function NetworkMapView() {
             </div>
             <button
               onClick={() => {
-                const context = `Analyze network health for geohash ${selectedNode.geohash} in ${selectedNode.city}. Use analyze_node_connectivity to get active node count, geographic spread, and health score for this area.`;
-                (window as any).__networkAgentContext = context;
+                const queryText = `Analyze network health for geohash ${selectedNode.geohash} in ${selectedNode.city}. Use analyze_node_connectivity to get active node count, geographic spread, and health score for this area.`;
+                (window as any).__networkAgentContext = {
+                  query: queryText,
+                  geohash: selectedNode.geohash,
+                  city: selectedNode.city,
+                  radiusKm: 10
+                };
                 (window as any).__networkAgentTrigger?.();
               }}
               style={{
@@ -534,8 +539,14 @@ export function NetworkMapView() {
                   east: selectedNode.lon + lonOffset,
                   west: selectedNode.lon - lonOffset,
                 };
-                const context = `Identify coverage gaps near ${selectedNode.city}. Use identify_coverage_gaps with bounding box: north=${bbox.north.toFixed(4)}, south=${bbox.south.toFixed(4)}, east=${bbox.east.toFixed(4)}, west=${bbox.west.toFixed(4)}, and minReportsThreshold=5.`;
-                (window as any).__networkAgentContext = context;
+                const queryText = `Identify coverage gaps near ${selectedNode.city}. Use identify_coverage_gaps with bounding box: north=${bbox.north.toFixed(4)}, south=${bbox.south.toFixed(4)}, east=${bbox.east.toFixed(4)}, west=${bbox.west.toFixed(4)}, and minReportsThreshold=5.`;
+                (window as any).__networkAgentContext = {
+                  query: queryText,
+                  geohash: selectedNode.geohash,
+                  city: selectedNode.city,
+                  radiusKm: 10,
+                  boundingBox: bbox
+                };
                 (window as any).__networkAgentTrigger?.();
               }}
               style={{
@@ -581,7 +592,25 @@ export function NetworkMapView() {
       </div>
       <AgentChatPanel
         contextType="network"
-        context={{ nodeCount: stats.totalNodes, totalSessions: stats.totalSessions, avgCoverage: stats.avgCoverage }}
+        context={{ 
+          nodeCount: stats.totalNodes, 
+          totalSessions: stats.totalSessions, 
+          avgCoverage: stats.avgCoverage,
+          // Add selected node context if a node is selected
+          ...(selectedNode ? {
+            geohash: selectedNode.geohash,
+            city: selectedNode.city,
+            radiusKm: 10,
+            selectedNode: {
+              id: selectedNode.id,
+              city: selectedNode.city,
+              lat: selectedNode.lat,
+              lon: selectedNode.lon,
+              sessions: selectedNode.sessions,
+              coverage: selectedNode.coverage
+            }
+          } : {})
+        }}
       />
     </div>
   );
