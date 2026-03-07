@@ -198,8 +198,88 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
         delete (window as any).__networkAgentContext;
       };
     }
+    
+    if (contextType === 'livemap') {
+      // Listen for direct urban planner results
+      (window as any).__urbanPlannerResultTrigger = () => {
+        const result = (window as any).__urbanPlannerResult;
+        if (result?.message) {
+          setCollapsed(false);
+          setMessages(prev => [...prev, { 
+            id: mkId(), 
+            role: 'assistant', 
+            content: result.message, 
+            timestamp: Date.now() 
+          }]);
+          
+          // Merge route context into component context for future queries
+          if (result.context) {
+            Object.assign(context, result.context);
+          }
+        }
+      };
+      
+      // Listen for general agent triggers
+      (window as any).__triggerAgent = () => {
+        const msg = (window as any).__agentMessage;
+        const ctx = (window as any).__agentContext;
+        if (msg && ctx) { 
+          setCollapsed(false);
+          sendQuery(msg, ctx);
+        }
+      };
+      
+      return () => {
+        delete (window as any).__urbanPlannerResultTrigger;
+        delete (window as any).__urbanPlannerResult;
+        delete (window as any).__triggerAgent;
+        delete (window as any).__agentMessage;
+        delete (window as any).__agentContext;
+      };
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextType]);
+
+  // Show diff analysis as initial message (append, don't replace)
+  // Track shown diffs by their display name to avoid duplicates on reload
+  useEffect(() => {
+    console.log('🔍 AgentChatPanel context.diffAnalysis:', context.diffAnalysis);
+    if (context.diffAnalysis && context.currentDiff) {
+      const diffId = `${context.currentDiff.sessionA.id}-${context.currentDiff.sessionB.id}`;
+
+      // IMPORTANT: use the functional updater for de-dupe so we always compare
+      // against the latest hydrated message list (avoids stale closure on reload).
+      setMessages(prev => {
+        const alreadyShown = prev.some(m =>
+          m.role === 'assistant' &&
+          typeof m.content === 'string' &&
+          m.content.includes('Diff Analysis') &&
+          m.content.includes(context.currentDiff.displayName)
+        );
+
+        if (alreadyShown) {
+          console.log('⏭️ Diff analysis already shown for:', diffId);
+          return prev;
+        }
+
+        const nextContent = String(context.diffAnalysis ?? '').trim();
+        const last = prev[prev.length - 1];
+        const lastContent = typeof last?.content === 'string' ? last.content.trim() : '';
+        if (last?.role === 'assistant' && lastContent && lastContent === nextContent) {
+          console.log('⏭️ Skipping consecutive duplicate assistant message for:', diffId);
+          return prev;
+        }
+
+        console.log('✅ Appending diff analysis message for:', diffId);
+        return [...prev, {
+          id: mkId(),
+          role: 'assistant',
+          content: context.diffAnalysis!,
+          timestamp: Date.now(),
+        }];
+      });
+    }
+  }, [context.diffAnalysis, context.currentDiff]);
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
@@ -246,8 +326,24 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
     })),
   ];
 
+  // Simple markdown renderer (bold, remove emojis)
+  const renderMarkdown = (text: string) => {
+    // Remove emojis
+    const noEmoji = text.replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '');
+    
+    // Split by ** for bold
+    const parts = noEmoji.split(/(\*\*[^*]+\*\*)/g);
+    
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>;
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
   // Send a query to the orchestration agent
-  const sendQuery = async (q?: string) => {
+  const sendQuery = async (q?: string, contextOverride?: Record<string, any>) => {
     const text = (q ?? query).trim();
     if (!text || loading) return;
 
@@ -261,8 +357,9 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
     setLoading(true);
 
     try {
-      // Detect urban planning queries (path, route, construction, road)
+      // Detect query types
       const isUrbanPlanning = /\b(path|route|construction|road|optimal|build)\b/i.test(text);
+      const isMaintenance = /\b(maintenance|repair|prioritize|cost|fix)\b/i.test(text) || context.type === 'maintenance';
       
       if (contextType === 'network') {
         // Use network-analysis API for network context
@@ -272,7 +369,7 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             query: text,
-            context: { ...context, ...attachCtx },
+            context: { ...context, ...attachCtx, ...contextOverride },
           }),
         });
         const data = await res.json();
@@ -281,14 +378,49 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
       } else if (contextType === 'livemap' && isUrbanPlanning) {
         // Use urban-planning API for path/route queries
         const attachCtx = attachments.reduce<Record<string, any>>((acc, a) => ({ ...acc, ...a.data }), {});
+        const fullContext = { ...context, ...attachCtx, ...contextOverride };
+        
+        // Only use urban-planning API for actual coordinate-based routing
+        const hasCoordinates = (fullContext.pinA && fullContext.pinB) || (fullContext.start && fullContext.end);
+        
+        if (!hasCoordinates) {
+          // For text queries about routes, use regular chat API
+          const res = await fetch('/api/agent/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: text,
+              context: fullContext,
+            }),
+          });
+          const data = await res.json();
+          const content = data.analysis ?? data.message ?? JSON.stringify(data);
+          setMessages(prev => [...prev, { id: mkId(), role: 'assistant', content, timestamp: Date.now() }]);
+          return;
+        }
+        
+        // Use coordinates for actual route calculation
         const res = await fetch('/api/agent/urban-planning', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            query: text,
-            context: { ...context, ...attachCtx },
+            start: fullContext.pinA || fullContext.start,
+            end: fullContext.pinB || fullContext.end,
+            constraints: { avoidHazardTypes: ['POTHOLE', 'DEBRIS'] }
           }),
         });
+        
+        if (!res.ok) {
+          const error = await res.json();
+          setMessages(prev => [...prev, { 
+            id: mkId(), 
+            role: 'assistant', 
+            content: `Error calculating route: ${error.error || 'Unknown error'}`, 
+            timestamp: Date.now() 
+          }]);
+          return;
+        }
+        
         const data = await res.json();
         const content = data.analysis ?? data.message ?? JSON.stringify(data);
         
@@ -298,16 +430,62 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
           (window as any).__urbanPlannerPathTrigger?.();
         }
         
+        // Ensure panel is visible
+        setCollapsed(false);
+        
+        setMessages(prev => [...prev, { id: mkId(), role: 'assistant', content, timestamp: Date.now() }]);
+        setMessages(prev => [...prev, { id: mkId(), role: 'assistant', content, timestamp: Date.now() }]);
+      } else if (isMaintenance && context.type === 'maintenance') {
+        // Use maintenance-priority API
+        const hazardIds = context.hazardIds || [];
+        const res = await fetch('/api/agent/maintenance-priority', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hazardIds,
+            hazards: context.hazards,
+          }),
+        });
+        const data = await res.json();
+        const content = data.analysis ?? data.message ?? JSON.stringify(data);
         setMessages(prev => [...prev, { id: mkId(), role: 'assistant', content, timestamp: Date.now() }]);
       } else {
+        // Auto-attach current diff context if viewing a diff
+        const attachCtx = attachments.reduce<Record<string, any>>((acc, a) => ({ ...acc, ...a.data }), {});
+        
+        // Build context string for the agent
+        let contextPrompt = '';
+        if (context.currentDiff) {
+          const diff = context.currentDiff;
+          const timeSpan = diff.summary?.timeSpanDays != null ? diff.summary.timeSpanDays.toFixed(1) : 'N/A';
+          const degradationScore = diff.summary?.degradationScore != null ? diff.summary.degradationScore.toFixed(1) : 'N/A';
+          
+          contextPrompt = `\n\nCurrent Context: You are analyzing a diff comparison between two sessions:
+- Session A: ${diff.sessionA.city || 'Unknown'} (${new Date(diff.sessionA.timestamp).toLocaleDateString()})
+- Session B: ${diff.sessionB.city || 'Unknown'} (${new Date(diff.sessionB.timestamp).toLocaleDateString()})
+- Time span: ${timeSpan} days
+- Changes: ${diff.changes.newCount || 0} new, ${diff.changes.fixedCount || 0} fixed, ${diff.changes.worsenedCount || 0} worsened, ${diff.changes.unchangedCount || 0} unchanged
+- Degradation score: ${degradationScore}/100
+- Net change: ${diff.summary?.netChange > 0 ? '+' : ''}${diff.summary?.netChange || 0} hazards
+
+Use this context to answer questions about the infrastructure changes between these two sessions.`;
+        }
+        
+        const fullContext = { 
+          type: contextType, 
+          ...context, 
+          ...attachCtx,
+          attachments: attachments.map(a => a.data) 
+        };
+        
         // Use default chat API for other contexts
         const res = await fetch('/api/agent/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            query: text,
+            query: text + contextPrompt,
             sessionId,
-            context: { type: contextType, ...context, attachments: attachments.map(a => a.data) },
+            context: fullContext,
           }),
         });
         const data = await res.json();
@@ -673,7 +851,7 @@ export function AgentChatPanel({ contextType, context = {}, availableSessions = 
                   }`,
                   whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                 }}>
-                  {m.content}
+                  {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
                 </div>
               )}
             </div>

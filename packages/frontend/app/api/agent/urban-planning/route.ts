@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  BedrockAgentRuntimeClient,
-  InvokeAgentCommand,
-} from '@aws-sdk/client-bedrock-agent-runtime';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,78 +13,54 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const agentId = process.env.NEXT_PUBLIC_BEDROCK_AGENT_ID || 'TAWWC3SQ0L';
-    const agentAliasId = process.env.NEXT_PUBLIC_BEDROCK_AGENT_ALIAS_ID || 'TSTALIASID';
     const region = process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1';
+    const lambdaClient = new LambdaClient({ region });
 
-    const client = new BedrockAgentRuntimeClient({ region });
-
-    const avoidTypes = constraints?.avoidHazardTypes?.join(', ') || 'potholes';
-    const inputText = `Find optimal path from latitude ${start.lat}, longitude ${start.lon} to latitude ${end.lat}, longitude ${end.lon}, avoiding ${avoidTypes}. Return the path waypoints, distance, hazards avoided, and ROI analysis.`;
-
-    const command = new InvokeAgentCommand({
-      agentId,
-      agentAliasId,
-      sessionId: `urban-planning-${Date.now()}`,
-      inputText,
-    });
-
-    const response = await client.send(command);
-
-    let agentResponse = '';
-    if (response.completion) {
-      for await (const event of response.completion) {
-        if (event.chunk?.bytes) {
-          agentResponse += new TextDecoder().decode(event.chunk.bytes);
-        }
-      }
-    }
-
-    // Parse agent response to extract structured data
-    // The agent will return the path data from the Urban Planner Lambda
-    let parsedData: any = {};
-    
-    try {
-      // Try to extract JSON from agent response
-      const jsonMatch = agentResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsedData = JSON.parse(jsonMatch[0]);
-      }
-    } catch (e) {
-      console.log('[urban-planning] Could not parse JSON from agent response');
-    }
-
-    // Convert path to GeoJSON format for frontend
-    const proposedPath = parsedData.path ? {
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: parsedData.path.map((p: any) => [p.lon, p.lat])
+    // Call Lambda directly for pin routing
+    const payload = {
+      messageVersion: '1.0',
+      agent: {
+        name: 'vigia-auditor-strategist',
+        id: 'TAWWC3SQ0L',
+        alias: 'TSTALIASID',
+        version: 'DRAFT'
       },
-      properties: {
-        totalDistanceKm: parsedData.totalDistanceKm,
-        hazardsAvoided: parsedData.hazardsAvoided,
-        detourPercent: parsedData.detourPercent,
-        constructionCost: parsedData.constructionCost,
-        breakEvenYears: parsedData.breakEvenYears,
-        roi10Year: parsedData.roi10Year,
-        compliance: parsedData.compliance,
-        zoneIntersections: parsedData.zoneIntersections,
-        recommendation: parsedData.recommendation
-      }
-    } : null;
+      actionGroup: 'UrbanPlanner',
+      apiPath: '/calculate-pin-routes',
+      httpMethod: 'POST',
+      parameters: [
+        { name: 'start_lat', type: 'number', value: String(start.lat) },
+        { name: 'start_lon', type: 'number', value: String(start.lon) },
+        { name: 'end_lat', type: 'number', value: String(end.lat) },
+        { name: 'end_lon', type: 'number', value: String(end.lon) }
+      ]
+    };
 
-    return NextResponse.json({
-      proposedPath,
-      analysis: agentResponse,
-      rawData: parsedData,
-      sessionId: response.sessionId,
+    const command = new InvokeCommand({
+      FunctionName: 'VigiaStack-IntelligenceWithHazardsUrbanPlannerFunc-spESG0Jxisgr',
+      Payload: JSON.stringify(payload),
     });
-  } catch (err: any) {
-    console.error('[urban-planning] Error:', err);
-    return NextResponse.json(
-      { error: err.message || 'Urban planning analysis failed' },
-      { status: 500 }
-    );
+
+    const response = await lambdaClient.send(command);
+    const result = JSON.parse(new TextDecoder().decode(response.Payload));
+    
+    // Extract the body from Lambda response
+    if (result.response?.responseBody?.['application/json']?.body) {
+      const body = JSON.parse(result.response.responseBody['application/json'].body);
+      
+      // Format response for agent display
+      const message = `Route calculation complete:\n\n**Fastest Route:**\n- Distance: ${body.fastest.distance_km} km\n- Duration: ${body.fastest.duration_minutes} min\n- Hazards: ${body.fastest.hazards_count}\n\n**Safest Route:**\n- Distance: ${body.safest.distance_km} km\n- Duration: ${body.safest.duration_minutes} min\n- Hazards: ${body.safest.hazards_count}\n- Avoided: ${body.safest.hazards_avoided} hazards\n- Detour: ${body.safest.detour_percent}%\n\n**Recommendation:** ${body.recommendation}`;
+      
+      return NextResponse.json({ 
+        message,
+        pathData: body,
+        analysis: message
+      });
+    }
+
+    return NextResponse.json({ error: 'Invalid Lambda response', raw: result }, { status: 500 });
+  } catch (error) {
+    console.error('Urban planning error:', error);
+    return NextResponse.json({ error: 'Failed to calculate route' }, { status: 500 });
   }
 }

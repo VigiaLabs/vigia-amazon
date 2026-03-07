@@ -147,6 +147,29 @@ export function NetworkMapView() {
     avgCoverage: (DEMO_NODES.reduce((sum, n) => sum + n.coverage, 0) / DEMO_NODES.length).toFixed(1),
   });
 
+  // Fetch real network stats
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch('/api/metrics/dashboard');
+        if (res.ok) {
+          const data = await res.json();
+          setStats(prev => ({
+            ...prev,
+            totalNodes: data.network?.activeNodes || prev.totalNodes,
+            totalSessions: data.hazards?.total || prev.totalSessions,
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch network stats:', error);
+      }
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const zoomOut = () => {
     map.current?.flyTo({
       center: [78.9629, 20.5937],

@@ -119,8 +119,66 @@ export function NewSessionView({ onSessionCreated, onRefreshSessions }: NewSessi
 
       mapInstanceRef.current = map;
 
-      map.on('load', () => {
+      map.on('load', async () => {
         applyMapFilter(mapRef.current, settings.mapStyle);
+        
+        // Fetch and display hazards
+        try {
+          const res = await fetch('/api/metrics/dashboard');
+          if (res.ok) {
+            const data = await res.json();
+            // Get hazards from API (we'll need to create an endpoint that returns actual hazard coordinates)
+            const hazardsRes = await fetch(`/api/hazards?lat=${selectedLocation.lat}&lon=${selectedLocation.lon}&radius=50000`);
+            if (hazardsRes.ok) {
+              const hazardsData = await hazardsRes.json();
+              const hazards = hazardsData.hazards || [];
+              
+              // Add hazards as GeoJSON layer
+              if (hazards.length > 0) {
+                const geojsonData = {
+                  type: 'FeatureCollection' as const,
+                  features: hazards.map((h: any) => ({
+                    type: 'Feature' as const,
+                    geometry: {
+                      type: 'Point' as const,
+                      coordinates: [h.lon, h.lat],
+                    },
+                    properties: {
+                      hazardType: h.hazardType,
+                      status: h.status,
+                    },
+                  })),
+                };
+
+                map.addSource('hazards-preview', {
+                  type: 'geojson',
+                  data: geojsonData,
+                });
+
+                map.addLayer({
+                  id: 'hazards-preview-layer',
+                  type: 'circle',
+                  source: 'hazards-preview',
+                  paint: {
+                    'circle-radius': 4,
+                    'circle-color': [
+                      'case',
+                      ['==', ['get', 'status'], 'VERIFIED'],
+                      'rgb(34, 197, 94)',
+                      'rgb(239, 68, 68)',
+                    ],
+                    'circle-opacity': 0.6,
+                    'circle-stroke-width': 1,
+                    'circle-stroke-color': '#ffffff',
+                  },
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Failed to load hazards:', err);
+        }
+        
         // Draw bounding box handlers
         map.on('mousedown', (e) => {
           if (!drawModeRef.current) return;

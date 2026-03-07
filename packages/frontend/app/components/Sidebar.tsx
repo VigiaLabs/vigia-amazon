@@ -251,6 +251,8 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
   const [filterText, setFilterText] = useState('');
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const hasLoadedMetricsRef = useRef(false);
   const [vfsManager, setVfsManager] = useState<VFSManager | null>(null);
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
@@ -262,6 +264,81 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; session: any } | null>(null);
   const [draggedSession, setDraggedSession] = useState<any>(null);
   const [dropTarget, setDropTarget] = useState<any>(null);
+  const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(new Set());
+  const [metrics, setMetrics] = useState({ 
+    verifiedHazards: 0, 
+    unverifiedHazards: 0, 
+    activeNodes: 0, 
+    coverageAreaKm2: 0,
+    criticalHazards: 0,
+    avgSeverity: 0,
+    recentActivity: 0,
+    hazardDensity: 0,
+  });
+
+  const renderPinnedMetricBadge = (opts: {
+    loadingWidth?: number;
+    loadingIndex?: number;
+    children: React.ReactNode;
+    background: string;
+    color: string;
+  }) => {
+    const { loadingWidth = 44, loadingIndex = 0, children, background, color } = opts;
+    return metricsLoading ? (
+      <span className="exp-badge" style={{ background: 'transparent', padding: 0 }}>
+        <span
+          style={{
+            display: 'inline-block',
+            height: 14,
+            width: loadingWidth,
+            borderRadius: 20,
+            verticalAlign: 'middle',
+            background: 'linear-gradient(90deg,var(--v-hover) 25%,var(--v-hover-md) 50%,var(--v-hover) 75%)',
+            backgroundSize: '200% 100%',
+            animation: `sb-shimmer 1.6s ease-in-out ${loadingIndex * 0.1}s infinite`,
+          }}
+        />
+      </span>
+    ) : (
+      <span className="exp-badge" style={{ background, color }}>{children}</span>
+    );
+  };
+
+  // Fetch real metrics from API
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        if (!hasLoadedMetricsRef.current) setMetricsLoading(true);
+        const res = await fetch('/api/metrics/dashboard');
+        if (res.ok) {
+          const data = await res.json();
+          setMetrics({
+            verifiedHazards: data.hazards?.verified || 0,
+            unverifiedHazards: data.hazards?.pending || 0,
+            activeNodes: data.network?.activeNodes || 0,
+            coverageAreaKm2: data.network?.coverageAreaKm2 || 0,
+            criticalHazards: data.hazards?.critical || 0,
+            avgSeverity: data.hazards?.avgVerificationScore || 0,
+            recentActivity: data.network?.recentActivity || 0,
+            hazardDensity: data.network?.coverageAreaKm2 > 0 
+              ? Math.round((data.hazards?.total || 0) / data.network.coverageAreaKm2 * 100) / 100
+              : 0,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch sidebar metrics:', error);
+      } finally {
+        if (!hasLoadedMetricsRef.current) {
+          hasLoadedMetricsRef.current = true;
+          setMetricsLoading(false);
+        }
+      }
+    };
+
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
   const mapRef = useRef<any>(null);
   const startX   = useRef(0);
   const startW   = useRef(DEFAULT_WIDTH);
@@ -332,7 +409,74 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
       const savedIds = new Set(savedSessions.map((s: any) => s.sessionId));
       const uniqueTempSessions = tempSessions.filter((t: any) => !savedIds.has(t.sessionId));
       
-      setSessions([...uniqueTempSessions, ...savedSessions]);
+      const allSessions = [...uniqueTempSessions, ...savedSessions];
+      setSessions(allSessions);
+      
+      // Calculate metrics
+      const verified = allSessions.reduce((sum, s) => sum + (s.verifiedCount || 0), 0);
+      const total = allSessions.reduce((sum, s) => sum + (s.hazardCount || 0), 0);
+      const unverified = total - verified;
+      
+      // Count unique contributors (nodes) and analyze hazards
+      const uniqueContributors = new Set<string>();
+      let totalAreaKm2 = 0;
+      let criticalCount = 0;
+      let totalSeverity = 0;
+      let severityCount = 0;
+      const now = Date.now();
+      const last24h = now - (24 * 60 * 60 * 1000);
+      let recentCount = 0;
+      
+      tempFiles.forEach((file: any) => {
+        file.hazards?.forEach((h: any) => {
+          if (h.signature) uniqueContributors.add(h.signature);
+          
+          // Critical hazards (severity >= 0.8 or type ACCIDENT/FLOODING)
+          if (h.severity >= 0.8 || h.type === 'ACCIDENT' || h.type === 'FLOODING') {
+            criticalCount++;
+          }
+          
+          // Average severity
+          if (typeof h.severity === 'number') {
+            totalSeverity += h.severity;
+            severityCount++;
+          }
+          
+          // Recent activity (last 24 hours)
+          if (h.timestamp && h.timestamp > last24h) {
+            recentCount++;
+          }
+        });
+        
+        if (file.coverage?.areaKm2) {
+          totalAreaKm2 += file.coverage.areaKm2;
+        }
+      });
+      
+      const avgSeverity = severityCount > 0 ? totalSeverity / severityCount : 0;
+      const hazardDensity = totalAreaKm2 > 0 ? total / totalAreaKm2 : 0;
+      
+      setMetrics({
+        verifiedHazards: verified,
+        unverifiedHazards: unverified,
+        activeNodes: uniqueContributors.size,
+        coverageAreaKm2: Math.round(totalAreaKm2),
+        criticalHazards: criticalCount,
+        avgSeverity: Math.round(avgSeverity * 100) / 100,
+        recentActivity: recentCount,
+        hazardDensity: Math.round(hazardDensity * 100) / 100,
+      });
+      
+      console.log('📊 Metrics calculated:', {
+        verified,
+        unverified,
+        activeNodes: uniqueContributors.size,
+        criticalCount,
+        avgSeverity,
+        recentCount,
+        hazardDensity,
+        totalFiles: tempFiles.length,
+      });
     } catch (err) {
       console.error('Failed to load sessions:', err);
     } finally {
@@ -516,13 +660,33 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
           region: region,
           city: city,
         },
+        metadata: {
+          coverage: {
+            type: 'city' as const,
+            name: city,
+            centerPoint: {
+              lat: selectedLocation.lat,
+              lon: selectedLocation.lon,
+              geohash: geohash,
+            },
+            boundingBox: {
+              north: selectedLocation.lat + 0.05,
+              south: selectedLocation.lat - 0.05,
+              east: selectedLocation.lon + 0.05,
+              west: selectedLocation.lon - 0.05,
+            },
+            geohashPrecision: 7,
+            geohashTiles: [geohash],
+            areaKm2: 25, // Approximate for ~5km radius
+          },
+          source: 'manual',
+        },
         hazards: [{ 
           type: 'POTHOLE', 
           lat: selectedLocation.lat, 
           lon: selectedLocation.lon, 
           confidence: 0.85 
         }],
-        metadata: { source: 'manual' },
       });
       
       await loadSessions(vfsManager);
@@ -580,6 +744,20 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, session });
+  };
+
+  const handlePinSession = () => {
+    if (!contextMenu?.session?.sessionId) return;
+    setPinnedSessions(prev => {
+      const next = new Set(prev);
+      if (next.has(contextMenu.session.sessionId)) {
+        next.delete(contextMenu.session.sessionId);
+      } else {
+        next.add(contextMenu.session.sessionId);
+      }
+      return next;
+    });
+    setContextMenu(null);
   };
 
   const handleDeleteSession = async () => {
@@ -796,15 +974,6 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
           </div>
         )}
 
-        {/* ── Stats cards ──────────────── */}
-        {!isCollapsed && (
-          <div className="vigia-stats-strip">
-            <StatCard label="Hazards"  value="7"  color={C.accent} />
-            <StatCard label="Verified" value="6"  color={C.accent} />
-            <StatCard label="Nodes"    value="48" color={C.accent} />
-          </div>
-        )}
-
         {/* ── Tree ─────────────────────── */}
         <div style={{ flex: 1, overflowY: 'auto', paddingTop: 2, paddingBottom: 4 }}>
           <style>{`@keyframes sb-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}`}</style>
@@ -974,26 +1143,134 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
             <>
               <div style={{ height: 1, background: 'var(--v-panel-border)', margin: '8px 10px 4px' }} />
               <div className="exp-section-lbl">Pinned</div>
+              
+              {/* Debug: Always show at least Active Hazards */}
+              <button className="exp-pinned-btn" title="Active Hazards metric">
+                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                  <AlertTriangle size={13} style={{ color: C.accent }} />
+                </span>
+                <span className="exp-pinned-btn__label">Active Hazards</span>
+                {renderPinnedMetricBadge({
+                  loadingWidth: 64,
+                  loadingIndex: 0,
+                  background: C.accentBg,
+                  color: C.accent,
+                  children: <>{metrics.verifiedHazards}v / {metrics.unverifiedHazards}u</>,
+                })}
+              </button>
 
-              {[
-                { icon: <Navigation size={13} />,                                         label: 'Route Library',  badge: undefined,  badgeBg: undefined,             badgeColor: undefined },
-                { icon: <AlertTriangle size={13} style={{ color: C.accent }} />,           label: 'Active Hazards', badge: '7',         badgeBg: C.accentBg,               badgeColor: C.accent },
-                { icon: <Activity size={13} style={{ color: C.accent }} />,                label: 'Swarm Monitor',  badge: '48',        badgeBg: C.accentBg,               badgeColor: C.accent },
-                { icon: <MapPin size={13} style={{ color: C.textMut }} />,                 label: 'Rourkela Zone',  badge: undefined,  badgeBg: undefined,             badgeColor: undefined },
-              ].map(({ icon, label, badge, badgeBg, badgeColor }) => (
-                <button key={label} className="exp-pinned-btn">
-                  <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>{icon}</span>
-                  <span className="exp-pinned-btn__label">{label}</span>
-                  {badge && (
-                    <span className="exp-badge" style={{
-                      background: badgeBg ?? 'var(--v-hover)',
-                      color: badgeColor ?? C.textMut,
-                    }}>
-                      {badge}
+              {/* Active Nodes - Always visible */}
+              <button className="exp-pinned-btn" title="Active monitoring nodes">
+                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                  <Activity size={13} style={{ color: C.accent }} />
+                </span>
+                <span className="exp-pinned-btn__label">Active Nodes</span>
+                {renderPinnedMetricBadge({
+                  loadingWidth: 32,
+                  loadingIndex: 1,
+                  background: C.accentBg,
+                  color: C.accent,
+                  children: <>{metrics.activeNodes}</>,
+                })}
+              </button>
+
+              {/* Critical Hazards - Always visible */}
+              <button className="exp-pinned-btn" title="High-severity hazards">
+                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                  <AlertTriangle size={13} style={{ color: C.accent }} />
+                </span>
+                <span className="exp-pinned-btn__label">Critical Hazards</span>
+                {renderPinnedMetricBadge({
+                  loadingWidth: 32,
+                  loadingIndex: 2,
+                  background: C.accentBg,
+                  color: C.accent,
+                  children: <>{metrics.criticalHazards}</>,
+                })}
+              </button>
+
+              {/* Recent Activity (24h) - Always visible */}
+              <button className="exp-pinned-btn" title="Hazards detected in last 24 hours">
+                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                  <Activity size={13} style={{ color: C.accent }} />
+                </span>
+                <span className="exp-pinned-btn__label">Recent (24h)</span>
+                {renderPinnedMetricBadge({
+                  loadingWidth: 32,
+                  loadingIndex: 3,
+                  background: C.accentBg,
+                  color: C.accent,
+                  children: <>{metrics.recentActivity}</>,
+                })}
+              </button>
+
+              {/* Coverage Area - Always visible */}
+              <button className="exp-pinned-btn" title="Total monitored area">
+                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                  <MapPin size={13} style={{ color: C.accent }} />
+                </span>
+                <span className="exp-pinned-btn__label">Coverage Area</span>
+                {renderPinnedMetricBadge({
+                  loadingWidth: 56,
+                  loadingIndex: 4,
+                  background: C.accentBg,
+                  color: C.accent,
+                  children: <>{metrics.coverageAreaKm2} km²</>,
+                })}
+              </button>
+
+              {/* Hazard Density - Always visible */}
+              <button className="exp-pinned-btn" title="Hazards per square kilometer">
+                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                  <MapPin size={13} style={{ color: C.accent }} />
+                </span>
+                <span className="exp-pinned-btn__label">Hazard Density</span>
+                {renderPinnedMetricBadge({
+                  loadingWidth: 56,
+                  loadingIndex: 5,
+                  background: C.accentBg,
+                  color: C.accent,
+                  children: <>{metrics.hazardDensity}/km²</>,
+                })}
+              </button>
+
+              {/* Average Severity - Always visible */}
+              <button className="exp-pinned-btn" title="Mean severity across all hazards">
+                <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                  <AlertTriangle size={13} style={{ color: C.accent }} />
+                </span>
+                <span className="exp-pinned-btn__label">Avg Severity</span>
+                {renderPinnedMetricBadge({
+                  loadingWidth: 42,
+                  loadingIndex: 6,
+                  background: C.accentBg,
+                  color: C.accent,
+                  children: <>{(metrics.avgSeverity * 100).toFixed(0)}%</>,
+                })}
+              </button>
+
+              {/* Pinned Sessions */}
+              {Array.from(pinnedSessions).map(sessionId => {
+                const session = sessions.find(s => s.sessionId === sessionId);
+                if (!session) return null;
+                return (
+                  <button 
+                    key={sessionId} 
+                    className="exp-pinned-btn"
+                    onClick={() => onSessionClick?.(session)}
+                  >
+                    <span style={{ color: C.textMut, flexShrink: 0, display: 'flex' }}>
+                      <MapPin size={13} style={{ color: C.textMut }} />
                     </span>
-                  )}
-                </button>
-              ))}
+                    <span className="exp-pinned-btn__label">
+                      {session.location?.city || session.displayName || 'Unknown'}
+                    </span>
+                    <span className="exp-badge" style={{ background: 'var(--v-hover)', color: C.textMut }}>
+                      {session.hazardCount}
+                    </span>
+                  </button>
+                );
+              })}
             </>
           )}
         </div>
@@ -1324,6 +1601,27 @@ export function Sidebar({ onSentinelEyeClick, isSentinelEyeActive, onSettingsOpe
                 onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
               >
                 Open
+              </button>
+              <button
+                onClick={handlePinSession}
+                style={{
+                  width: '100%',
+                  padding: '6px 12px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: C.text,
+                  fontSize: '0.75rem',
+                  fontFamily: "var(--v-font-ui)",
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = C.hover}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+              >
+                {pinnedSessions.has(contextMenu.session.sessionId) ? 'Unpin' : 'Pin'}
               </button>
               <button
                 onClick={handleShowMetadata}

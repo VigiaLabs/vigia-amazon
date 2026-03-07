@@ -1,13 +1,37 @@
 'use client';
 
 import { useEconomicStore } from '@/stores/economicStore';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AgentChatPanel } from './AgentChatPanel';
 
 export function MaintenancePanel() {
   const { maintenanceQueue, isLoading, submitMaintenanceReport } = useEconomicStore();
   const [selectedHazard, setSelectedHazard] = useState<any>(null);
   const [notes, setNotes] = useState('');
+  const [queuedHazards, setQueuedHazards] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Hydrate queue from sessionStorage (session-only; cleared on browser restart)
+    try {
+      const fromGlobal = (window as any).__maintenanceHazards;
+      if (Array.isArray(fromGlobal) && fromGlobal.length) {
+        setQueuedHazards(fromGlobal);
+        if (!selectedHazard) setSelectedHazard(fromGlobal[0]);
+        sessionStorage.setItem('vigia:maintenance:queuedHazards', JSON.stringify({ version: 1, hazards: fromGlobal }));
+        return;
+      }
+
+      const raw = sessionStorage.getItem('vigia:maintenance:queuedHazards');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const hazards = Array.isArray(parsed?.hazards) ? parsed.hazards : [];
+      setQueuedHazards(hazards);
+      if (!selectedHazard && hazards.length) setSelectedHazard(hazards[0]);
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +89,41 @@ export function MaintenancePanel() {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+        {/* Queued from map */}
+        {queuedHazards.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: '0.7rem', color: C.textSec, fontWeight: 600, marginBottom: 8 }}>
+              Queued Hazards ({queuedHazards.length})
+            </div>
+            {queuedHazards.slice(0, 20).map((h: any) => (
+              <button
+                key={String(h.id || h.hazardId || `${h.geohash}-${h.timestamp || ''}-${h.lat}-${h.lon}`)}
+                onClick={() => setSelectedHazard(h)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: 8,
+                  marginBottom: 6,
+                  background: selectedHazard?.id === h.id ? 'var(--c-accent-glow)' : 'var(--v-hover)',
+                  border: `1px solid ${selectedHazard?.id === h.id ? 'var(--c-accent-glow-strong)' : 'var(--v-border-default)'}`,
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  fontSize: '0.65rem',
+                  fontFamily: 'var(--v-font-mono)',
+                  color: selectedHazard?.id === h.id ? 'var(--c-accent-2)' : C.text,
+                }}
+              >
+                <div style={{ opacity: selectedHazard?.id === h.id ? 1 : 0.9 }}>
+                  {h.type || h.hazardType || 'HAZARD'}
+                </div>
+                <div style={{ color: selectedHazard?.id === h.id ? 'rgba(255,255,255,0.85)' : C.textMut }}>
+                  {h.geohash || ''}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
         {selectedHazard ? (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: '0.7rem', color: C.textSec, fontWeight: 600 }}>
@@ -132,7 +191,7 @@ export function MaintenancePanel() {
           </form>
         ) : (
           <div style={{ fontSize: '0.7rem', color: C.textMut, textAlign: 'center', padding: 20 }}>
-            Click a hazard on the map to report it for maintenance
+            Select a queued hazard to report it for maintenance
           </div>
         )}
 

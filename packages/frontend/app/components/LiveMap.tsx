@@ -13,6 +13,7 @@ import { DiffLegend } from './DiffLegend';
 // ─────────────────────────────────────────────
 
 type Hazard = {
+  hazardId: string;
   lat: number; lon: number; geohash: string;
   hazardType: string; confidence: number;
   status: string; verificationScore?: number; timestamp: string;
@@ -100,13 +101,415 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
   const { settings, update } = useSettings();
   const mapContainer   = useRef<HTMLDivElement>(null);
   const map            = useRef<maplibregl.Map | null>(null);
-  const markers        = useRef<maplibregl.Marker[]>([]);
   const pendingSession = useRef<any>(null);
   const currentStyle   = useRef<MapStyle>(settings.mapStyle);
 
   const [hazards,        setHazards]        = useState<Hazard[]>([]);
+  const [hazardsHydrated, setHazardsHydrated] = useState(false);
+  const hazardsHydratedRef = useRef(false);
   const [showUnverified, setShowUnverified]  = useState(true);
   const [mapReady,       setMapReady]        = useState(false);
+  const [selectionMode,  setSelectionMode]   = useState(false);
+  const [selectedHazards, setSelectedHazards] = useState<Set<string>>(new Set());
+  const selectionModeRef = useRef(false);
+
+  const HAZARDS_SOURCE_ID = 'hazards-source';
+  const HAZARDS_LAYER_ID = 'hazards-layer';
+
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+
+  type PinPoint = { lat: number; lon: number };
+  const [pinA, setPinA] = useState<PinPoint | null>(null);
+  const [pinB, setPinB] = useState<PinPoint | null>(null);
+  const dropPinModeRef = useRef<'A' | 'B' | null>(null);
+  const pinMarkersRef = useRef<{ A: maplibregl.Marker | null; B: maplibregl.Marker | null }>({ A: null, B: null });
+  const routeDataRef = useRef<any>(null);
+  const ignoreNextHazardClickRef = useRef(false);
+
+  const ROUTE_FASTEST_ID = 'fastest-route';
+  const ROUTE_SAFEST_ID = 'safest-route';
+
+  const setDropPinMode = useCallback((mode: 'A' | 'B' | null) => {
+    dropPinModeRef.current = mode;
+    if (typeof window !== 'undefined') {
+      (window as any).__dropPinMode = mode;
+    }
+    const m = map.current;
+    if (!m) return;
+
+    if (mode) {
+      m.getCanvas().style.cursor = 'crosshair';
+      // Reduce accidental drags while dropping pins
+      try {
+        m.dragPan.disable();
+        m.doubleClickZoom.disable();
+      } catch {
+        // ignore
+      }
+    } else {
+      m.getCanvas().style.cursor = '';
+      try {
+        m.dragPan.enable();
+        m.doubleClickZoom.enable();
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  // Escape to cancel pin-drop mode
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (!dropPinModeRef.current) return;
+      setDropPinMode(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setDropPinMode]);
+
+  const makePinElement = useCallback((label: 'A' | 'B') => {
+    const el = document.createElement('div');
+    el.className = 'pin-marker';
+    el.style.pointerEvents = 'none';
+    el.innerHTML = `
+      <div style="
+        width: 32px;
+        height: 32px;
+        background: ${label === 'A' ? '#EF4444' : '#3B82F6'};
+        border: 3px solid white;
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      ">
+        <span style="
+          color: white;
+          font-weight: bold;
+          font-size: 14px;
+          transform: rotate(45deg);
+          font-family: var(--v-font-mono);
+        ">${label}</span>
+      </div>
+    `;
+    return el;
+  }, []);
+
+  const upsertPinMarker = useCallback((label: 'A' | 'B', point: PinPoint | null) => {
+    const m = map.current;
+    if (!m) return;
+
+    const existing = pinMarkersRef.current[label];
+    if (!point) {
+      existing?.remove();
+      pinMarkersRef.current[label] = null;
+      return;
+    }
+
+    if (existing) {
+      existing.setLngLat([point.lon, point.lat]);
+      return;
+    }
+
+    const marker = new maplibregl.Marker({ element: makePinElement(label) })
+      .setLngLat([point.lon, point.lat])
+      .addTo(m);
+    pinMarkersRef.current[label] = marker;
+  }, [makePinElement]);
+
+  const removeRouteLayers = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+    [ROUTE_FASTEST_ID, ROUTE_SAFEST_ID].forEach((id) => {
+      try {
+        if (m.getLayer(id)) m.removeLayer(id);
+        if (m.getSource(id)) m.removeSource(id);
+      } catch {
+        // ignore
+      }
+    });
+  }, []);
+
+  const plotRoutes = useCallback((routeData: any) => {
+    const m = map.current;
+    if (!m || !routeData) return;
+
+    removeRouteLayers();
+
+    const fastest = routeData?.fastest?.geometry;
+    const safest = routeData?.safest?.geometry;
+    if (!Array.isArray(fastest) || !Array.isArray(safest)) return;
+
+    m.addSource(ROUTE_FASTEST_ID, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: fastest,
+        },
+        properties: {},
+      },
+    } as any);
+
+    m.addLayer({
+      id: ROUTE_FASTEST_ID,
+      type: 'line',
+      source: ROUTE_FASTEST_ID,
+      paint: {
+        'line-color': '#3B82F6',
+        'line-width': 4,
+        'line-dasharray': [2, 2],
+      },
+    } as any);
+
+    m.addSource(ROUTE_SAFEST_ID, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: safest,
+        },
+        properties: {},
+      },
+    } as any);
+
+    m.addLayer({
+      id: ROUTE_SAFEST_ID,
+      type: 'line',
+      source: ROUTE_SAFEST_ID,
+      paint: {
+        'line-color': '#22C55E',
+        'line-width': 4,
+      },
+    } as any);
+  }, [removeRouteLayers]);
+
+  const calculatePinRoute = useCallback(async () => {
+    if (!pinA || !pinB) return;
+
+    try {
+      const res = await fetch('/api/agent/urban-planning', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          start: { lat: pinA.lat, lon: pinA.lon },
+          end: { lat: pinB.lat, lon: pinB.lon },
+          constraints: { avoidHazardTypes: ['POTHOLE', 'DEBRIS'] }
+        }),
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+      
+      // Plot routes on map
+      if (data.pathData) {
+        routeDataRef.current = data.pathData;
+        plotRoutes(data.pathData);
+      }
+      
+      // Send result directly to agent panel with context
+      if (data.message || data.analysis) {
+        (window as any).__urbanPlannerResult = {
+          message: data.message || data.analysis,
+          pathData: data.pathData,
+          context: {
+            type: 'route-calculated',
+            pinA: { lat: pinA.lat, lon: pinA.lon },
+            pinB: { lat: pinB.lat, lon: pinB.lon },
+            fastest: data.pathData?.fastest,
+            safest: data.pathData?.safest,
+            recommendation: data.pathData?.recommendation
+          }
+        };
+        (window as any).__urbanPlannerResultTrigger?.();
+      }
+    } catch {
+      // ignore
+    }
+  }, [pinA, pinB, plotRoutes]);
+
+  // Expose pin routing hooks for TopBar
+  useEffect(() => {
+    (window as any).__setDropPinMode = (mode: 'A' | 'B' | null) => setDropPinMode(mode);
+    (window as any).__calculatePinRoute = () => calculatePinRoute();
+    return () => {
+      // don't delete globals (other tabs/components may depend on them)
+    };
+  }, [setDropPinMode, calculatePinRoute]);
+
+  // Keep markers in sync
+  useEffect(() => {
+    if (!map.current || !mapReady) return;
+    upsertPinMarker('A', pinA);
+    upsertPinMarker('B', pinB);
+  }, [pinA, pinB, mapReady, upsertPinMarker]);
+
+  useEffect(() => {
+    selectionModeRef.current = selectionMode;
+  }, [selectionMode]);
+
+  const markHazardsHydrated = useCallback(() => {
+    if (hazardsHydratedRef.current) return;
+    hazardsHydratedRef.current = true;
+    setHazardsHydrated(true);
+  }, []);
+
+  const makeHazardId = useCallback((input: { geohash?: string; timestamp?: string; lat: number; lon: number }) => {
+    const gh = String(input.geohash || 'nogh');
+    const ts = String(input.timestamp || 'notime');
+    return `${gh}#${ts}#${input.lat.toFixed(5)}#${input.lon.toFixed(5)}`;
+  }, []);
+
+  const normalizeHazard = useCallback((raw: any): Hazard | null => {
+    const lat = Number(raw?.lat);
+    const lon = Number(raw?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+    const geohash = String(raw?.geohash || raw?.geohash7 || '');
+    const timestamp = String(raw?.timestamp || raw?.ts || raw?.detectedAt || raw?.createdAt || '');
+    const hazardType = String(raw?.hazardType || raw?.type || 'HAZARD');
+    const confidence = Number(raw?.confidence ?? 0);
+    const status = String(raw?.status || 'unverified');
+    const verificationScore = raw?.verificationScore != null ? Number(raw.verificationScore) : undefined;
+    const hazardId = String(raw?.hazardId || raw?.id || '') || makeHazardId({ geohash, timestamp, lat, lon });
+
+    return {
+      hazardId,
+      lat,
+      lon,
+      geohash,
+      hazardType,
+      confidence: Number.isFinite(confidence) ? confidence : 0,
+      status,
+      verificationScore,
+      timestamp,
+    };
+  }, [makeHazardId]);
+
+  const toggleHazardSelection = useCallback((hazardId: string) => {
+    setSelectedHazards((prev) => {
+      const next = new Set(prev);
+      if (next.has(hazardId)) next.delete(hazardId);
+      else next.add(hazardId);
+      return next;
+    });
+  }, []);
+
+  const ensureHazardsLayer = useCallback(() => {
+    if (!map.current) return;
+    const m = map.current;
+
+    // Style reloads remove sources/layers; re-add as needed.
+    const hasSource = !!m.getSource(HAZARDS_SOURCE_ID);
+    const hasLayer = !!m.getLayer(HAZARDS_LAYER_ID);
+
+    if (!hasSource) {
+      m.addSource(HAZARDS_SOURCE_ID, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        // Use `properties.hazardId` as the feature id, so feature-state works.
+        promoteId: 'hazardId' as any,
+      } as any);
+    }
+
+    if (!hasLayer) {
+      m.addLayer({
+        id: HAZARDS_LAYER_ID,
+        type: 'circle',
+        source: HAZARDS_SOURCE_ID,
+        paint: {
+          'circle-radius': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            10,
+            6,
+          ],
+          'circle-color': [
+            'case',
+            ['==', ['get', 'status'], 'verified'],
+            'rgba(66,120,245,0.35)',
+            'rgba(217,79,92,0.35)',
+          ],
+          'circle-stroke-color': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            '#D94F5C',
+            ['case', ['==', ['get', 'status'], 'verified'], '#4278F5', '#D94F5C'],
+          ],
+          'circle-stroke-width': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            3,
+            1.5,
+          ],
+          'circle-opacity': 1,
+        },
+      } as any);
+
+      m.on('mouseenter', HAZARDS_LAYER_ID, () => {
+        m.getCanvas().style.cursor = 'pointer';
+      });
+      m.on('mouseleave', HAZARDS_LAYER_ID, () => {
+        m.getCanvas().style.cursor = '';
+      });
+    }
+  }, []); // uses stable string constants
+
+  const buildHazardsGeoJson = useCallback(() => {
+    const visible = hazards.filter((h) => h.status === 'verified' || showUnverified);
+    return {
+      type: 'FeatureCollection',
+      features: visible.map((h) => ({
+        type: 'Feature',
+        id: h.hazardId,
+        properties: {
+          hazardId: h.hazardId,
+          status: h.status,
+          hazardType: h.hazardType,
+          type: h.hazardType,
+          confidence: h.confidence,
+          geohash: h.geohash,
+          timestamp: h.timestamp,
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [h.lon, h.lat],
+        },
+      })),
+    } as any;
+  }, [hazards, showUnverified]);
+
+  // Keep hazards GeoJSON source in sync
+  useEffect(() => {
+    if (!map.current || !mapReady || !hazardsHydrated) return;
+    ensureHazardsLayer();
+
+    const source = map.current.getSource(HAZARDS_SOURCE_ID) as any;
+    if (source?.setData) {
+      source.setData(buildHazardsGeoJson());
+    }
+  }, [mapReady, hazardsHydrated, ensureHazardsLayer, buildHazardsGeoJson, settings.mapStyle]);
+
+  // Keep selection feature-state in sync
+  useEffect(() => {
+    if (!map.current || !mapReady || !hazardsHydrated) return;
+    ensureHazardsLayer();
+
+    const m = map.current;
+    const visible = hazards.filter((h) => h.status === 'verified' || showUnverified);
+    visible.forEach((h) => {
+      try {
+        m.setFeatureState({ source: HAZARDS_SOURCE_ID, id: h.hazardId as any }, { selected: selectedHazards.has(h.hazardId) });
+      } catch {
+        // ignore (feature may not exist yet)
+      }
+    });
+  }, [selectedHazards, hazards, showUnverified, mapReady, hazardsHydrated, ensureHazardsLayer, settings.mapStyle]);
 
   // ── Map viewport trigger for agent ──────────────────────────────────────────
   useEffect(() => {
@@ -148,14 +551,17 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
     const handler = (event: CustomEvent) => {
       const { type, lat, lon, confidence, timestamp } = event.detail;
       setHazards(prev => [{
+        hazardId: makeHazardId({ geohash: 'live', timestamp, lat, lon }),
         lat, lon, geohash: 'live',
         hazardType: type, confidence,
         status: 'unverified', timestamp,
       }, ...prev]);
+
+      markHazardsHydrated();
     };
     window.addEventListener('hazard-detected', handler as EventListener);
     return () => window.removeEventListener('hazard-detected', handler as EventListener);
-  }, [selectedSession]);
+  }, [selectedSession, makeHazardId, markHazardsHydrated]);
 
   // ── Load session hazards ────────────────────
   useEffect(() => {
@@ -163,13 +569,28 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       console.log('LiveMap: Loading session', selectedSession);
       console.log('LiveMap: Coverage', selectedSession.coverage);
       
-      const sessionHazards = selectedSession.hazards.map((h: any) => ({
-        lat: h.lat, lon: h.lon,
-        geohash: selectedSession.geohash7,
-        hazardType: h.type, confidence: h.confidence,
-        status: 'verified', timestamp: selectedSession.timestamp || selectedSession.temporal?.createdAt,
-      }));
+      const sessionHazards = selectedSession.hazards
+        .map((h: any) => {
+          const lat = Number(h.lat);
+          const lon = Number(h.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+          const geohash = String(selectedSession.geohash7 || '');
+          const timestamp = String(selectedSession.timestamp || selectedSession.temporal?.createdAt || '');
+          return {
+            hazardId: makeHazardId({ geohash, timestamp, lat, lon }),
+            lat,
+            lon,
+            geohash,
+            hazardType: String(h.type || 'HAZARD'),
+            confidence: Number(h.confidence ?? 0),
+            status: 'verified',
+            timestamp,
+          } satisfies Hazard;
+        })
+        .filter(Boolean) as Hazard[];
       setHazards(sessionHazards);
+      markHazardsHydrated();
       
       // Center map on session coverage
       if (map.current) {
@@ -190,7 +611,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
     } else {
       fetchHazards();
     }
-  }, [selectedSession]);
+  }, [selectedSession, makeHazardId, markHazardsHydrated]);
 
   // ── Fetch hazards ───────────────────────────
   const fetchHazards = async () => {
@@ -199,44 +620,15 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       if (!apiUrl) return;
       const res  = await fetch(`${apiUrl}/hazards`);
       const data = await res.json();
-      setHazards(data.hazards || []);
-    } catch (_) {}
-  };
-
-  // ── Marker element ──────────────────────────
-  const createMarkerElement = useCallback((verified: boolean, hazardType?: string) => {
-    const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'position:relative; width:14px; height:14px; cursor:pointer;';
-
-    const dot = document.createElement('div');
-    dot.style.cssText = `
-      position: absolute; inset: 0;
-      border-radius: 50%;
-      border: 1.5px solid ${verified ? '#4278F5' : '#D94F5C'};
-      background: ${verified ? 'rgba(66,120,245,0.35)' : 'rgba(217,79,92,0.35)'};
-      box-shadow: 0 0 6px ${verified ? 'rgba(66,120,245,0.55)' : 'rgba(217,79,92,0.55)'};
-      transition: transform 0.15s;
-    `;
-
-    // Pulse ring on unverified
-    if (!verified) {
-      const ring = document.createElement('div');
-      ring.className = 'hazard-ring';
-      ring.style.cssText = `
-        position: absolute; inset: -4px;
-        border-radius: 50%;
-        border: 1.5px solid #D94F5C;
-        animation: marker-ring 2s ease-out infinite;
-      `;
-      wrapper.appendChild(ring);
+      const raw = Array.isArray(data?.hazards) ? data.hazards : [];
+      const normalized = raw.map(normalizeHazard).filter(Boolean) as Hazard[];
+      setHazards(normalized);
+    } catch (_) {
+      // Best-effort: don't block UI forever if hazards fetch fails
+    } finally {
+      markHazardsHydrated();
     }
-
-    wrapper.addEventListener('mouseenter', () => { dot.style.transform = 'scale(1.3)'; });
-    wrapper.addEventListener('mouseleave', () => { dot.style.transform = 'scale(1)'; });
-
-    wrapper.appendChild(dot);
-    return wrapper;
-  }, []);
+  };
 
   // ── Map init ────────────────────────────────
   useEffect(() => {
@@ -263,6 +655,14 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       // Apply filter immediately on load
       applyMapFilter(mapContainer.current, settings.mapStyle);
 
+      // Ensure hazards layer exists (will be populated by effect)
+      ensureHazardsLayer();
+
+      // Rehydrate pins/routes
+      upsertPinMarker('A', pinA);
+      upsertPinMarker('B', pinB);
+      if (routeDataRef.current) plotRoutes(routeDataRef.current);
+
       // Handle pending session
       if (pendingSession.current) {
         console.log('LiveMap: Map loaded, processing pending session');
@@ -284,6 +684,93 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
     // Re-apply filter after any style change (tiles reload)
     map.current.on('styledata', () => {
       applyMapFilter(mapContainer.current, currentStyle.current);
+
+      // Re-add hazards layer on style reload
+      if (map.current?.isStyleLoaded?.()) {
+        try {
+          ensureHazardsLayer();
+          if (routeDataRef.current) plotRoutes(routeDataRef.current);
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    // Map interactions for hazard selection (GeoJSON layer)
+    const startPress = (e: any) => {
+      if (!map.current) return;
+      const m = map.current;
+      const point = e?.point;
+      if (!point) return;
+
+      // Check if hazards layer exists before querying
+      if (!m.getLayer(HAZARDS_LAYER_ID)) return;
+
+      const features = m.queryRenderedFeatures(point, { layers: [HAZARDS_LAYER_ID] }) as any[];
+      if (!features?.length) return;
+
+      const feature = features[0];
+      const hazardId = String(feature?.properties?.hazardId || feature?.id || '');
+      if (!hazardId) return;
+
+      if (longPressTimerRef.current != null) window.clearTimeout(longPressTimerRef.current);
+      longPressTriggeredRef.current = false;
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTriggeredRef.current = true;
+        setSelectionMode(true);
+        setSelectedHazards(new Set([hazardId]));
+      }, 450);
+    };
+
+    const endPress = () => {
+      if (longPressTimerRef.current != null) {
+        window.clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    };
+
+    map.current.on('mousedown', startPress);
+    map.current.on('touchstart', startPress);
+    map.current.on('mouseup', endPress);
+    map.current.on('touchend', endPress);
+    map.current.on('touchcancel', endPress);
+    map.current.on('mouseout', endPress);
+
+    map.current.on('click', HAZARDS_LAYER_ID, (e: any) => {
+      if (ignoreNextHazardClickRef.current) {
+        ignoreNextHazardClickRef.current = false;
+        return;
+      }
+
+      const feature = e?.features?.[0];
+      const hazardId = String(feature?.properties?.hazardId || feature?.id || '');
+      if (!hazardId) return;
+
+      if (longPressTriggeredRef.current) {
+        // Don't treat the release click as a selection toggle
+        longPressTriggeredRef.current = false;
+        return;
+      }
+
+      if (selectionModeRef.current) {
+        toggleHazardSelection(hazardId);
+      }
+    });
+
+    // Click-to-place pins
+    map.current.on('click', (e: any) => {
+      const mode = dropPinModeRef.current;
+      if (!mode) return;
+
+      const lat = Number(e?.lngLat?.lat);
+      const lon = Number(e?.lngLat?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+      ignoreNextHazardClickRef.current = true;
+
+      if (mode === 'A') setPinA({ lat, lon });
+      if (mode === 'B') setPinB({ lat, lon });
+      setDropPinMode(null);
     });
 
     map.current.on('styleimagemissing', (e) => {
@@ -300,6 +787,9 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
     return () => {
       clearInterval(interval);
       ro.disconnect();
+      pinMarkersRef.current.A?.remove();
+      pinMarkersRef.current.B?.remove();
+      pinMarkersRef.current = { A: null, B: null };
       map.current?.remove();
       map.current = null;
       setMapReady(false);
@@ -330,32 +820,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       : base + ' saturate(0.1) brightness(0.7)';
   }, [settings.showLabels, mapReady, settings.mapStyle]);
 
-  // ── Markers ─────────────────────────────────
-  useEffect(() => {
-    if (!map.current || !mapReady) return;
-    markers.current.forEach(m => m.remove());
-    markers.current = [];
-    hazards
-      .filter(h => h.status === 'verified' || showUnverified)
-      .forEach(hazard => {
-        const el     = createMarkerElement(hazard.status === 'verified', hazard.hazardType);
-        const marker = new maplibregl.Marker({ element: el })
-          .setLngLat([hazard.lon, hazard.lat])
-          .setPopup(
-            new maplibregl.Popup({ closeButton: false, offset: 12 }).setHTML(`
-              <div style="font-family:var(--v-font-mono);font-size:0.68rem;line-height:1.6;color:var(--c-text)">
-                <div style="font-weight:500;color:${hazard.status==='verified' ? 'var(--c-accent-2)' : 'var(--c-red)'};margin-bottom:4px">
-                  ${hazard.hazardType || 'HAZARD'} · ${hazard.status.toUpperCase()}
-                </div>
-                <div style="color:var(--c-text-2)">conf: ${(hazard.confidence * 100).toFixed(0)}%</div>
-                <div style="color:var(--c-text-3)">${hazard.lat.toFixed(4)}, ${hazard.lon.toFixed(4)}</div>
-              </div>
-            `)
-          )
-          .addTo(map.current!);
-        markers.current.push(marker);
-      });
-  }, [hazards, showUnverified, mapReady, createMarkerElement]);
+  // ── Hazards are rendered via GeoJSON layer ───────────────────────────────
 
   // ── Style display names ─────────────────────
   const STYLE_LABELS: Record<MapStyle, string> = {
@@ -376,12 +841,12 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       />
 
       {/* Grid overlay — rose tinted, only when enabled */}
-      {mapReady && settings.showGrid && (
+      {mapReady && hazardsHydrated && settings.showGrid && (
         <div className="map-grid-overlay" style={{ zIndex: 2 }} />
       )}
 
       {/* Loading */}
-      {!mapReady && (
+      {!(mapReady && hazardsHydrated) && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex',
           alignItems: 'center', justifyContent: 'center',
@@ -404,7 +869,100 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       {/* ── Overlays ─────────────────────────── */}
 
       {/* Top-left: hazard stats + style badge */}
-      {mapReady && (
+      {mapReady && hazardsHydrated && selectionMode && (
+        <div style={{
+          position: 'absolute', top: 52, right: 44,
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '6px 10px', borderRadius: 4,
+          background: 'var(--c-overlay)',
+          border: '1px solid var(--c-rose-border)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 6,
+        }}>
+          <span style={{
+            fontSize: '0.62rem',
+            color: 'var(--c-rose-2)',
+            fontFamily: 'var(--v-font-mono)',
+            fontWeight: 600,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+          }}>
+            Selection
+          </span>
+          <span style={{ color: 'var(--c-rose-border)', fontSize: '0.7rem' }}>│</span>
+          <span style={{
+            fontSize: '0.62rem',
+            color: 'var(--c-text-2)',
+            fontFamily: 'var(--v-font-mono)',
+          }}>
+            {selectedHazards.size} selected
+          </span>
+          <span style={{ color: 'var(--c-rose-border)', fontSize: '0.7rem' }}>│</span>
+          <button
+            onClick={() => {
+              const queued = hazards
+                .filter((h) => selectedHazards.has(h.hazardId))
+                .map((h) => ({
+                  id: h.hazardId,
+                  type: h.hazardType,
+                  severity: 3,
+                  geohash: h.geohash,
+                  lat: h.lat,
+                  lon: h.lon,
+                  timestamp: h.timestamp,
+                  confidence: h.confidence,
+                  status: h.status,
+                }));
+
+              sessionStorage.setItem('vigia:maintenance:queuedHazards', JSON.stringify({ version: 1, hazards: queued }));
+              window.dispatchEvent(new CustomEvent('vigia-report-maintenance', { detail: { hazards: queued } }));
+
+              setSelectedHazards(new Set());
+              setSelectionMode(false);
+            }}
+            disabled={selectedHazards.size === 0}
+            style={{
+              padding: '4px 9px',
+              borderRadius: 4,
+              cursor: selectedHazards.size === 0 ? 'not-allowed' : 'pointer',
+              fontFamily: 'var(--v-font-mono)',
+              fontSize: '0.60rem',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              border: '1px solid var(--c-accent-glow)',
+              background: 'var(--c-accent-glow)',
+              color: 'var(--c-accent-2)',
+              opacity: selectedHazards.size === 0 ? 0.5 : 1,
+            }}
+          >
+            Report
+          </button>
+          <button
+            onClick={() => {
+              setSelectedHazards(new Set());
+              setSelectionMode(false);
+            }}
+            style={{
+              padding: '4px 9px',
+              borderRadius: 4,
+              cursor: 'pointer',
+              fontFamily: 'var(--v-font-mono)',
+              fontSize: '0.60rem',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              border: '1px solid var(--c-border)',
+              background: 'var(--c-overlay)',
+              color: 'var(--c-text-3)',
+            }}
+          >
+            Exit
+          </button>
+        </div>
+      )}
+
+      {mapReady && hazardsHydrated && (
         <div style={{
           position: 'absolute', top: 10, left: 10,
           display: 'flex', alignItems: 'center', gap: 8,
@@ -455,7 +1013,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       )}
 
       {/* Map style switcher — 4 pills */}
-      {mapReady && (
+      {mapReady && hazardsHydrated && (
         <div style={{
           position: 'absolute', bottom: 16, left: 10,
           display: 'flex', gap: 5, zIndex: 5,
@@ -550,7 +1108,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       )}
 
       {/* Update Session button - only show when viewing a session */}
-      {mapReady && selectedSession && (
+      {mapReady && hazardsHydrated && selectedSession && (
         <div style={{ position: 'absolute', top: 10, right: 180, zIndex: 5 }}>
           <button
             onClick={async () => {
@@ -649,7 +1207,7 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       )}
 
       {/* Filter toggle — top right */}
-      {mapReady && (
+      {mapReady && hazardsHydrated && (
         <div style={{ position: 'absolute', top: 10, right: 44, zIndex: 5 }}>
           <label style={{
             display: 'flex', alignItems: 'center', gap: 8,
@@ -670,8 +1228,8 @@ export function LiveMap({ selectedSession }: { selectedSession?: any }) {
       )}
 
       {/* Diff layers */}
-      {mapReady && <DiffLegend />}
-      {mapReady && <DiffMarkersLayer map={map.current} />}
+      {mapReady && hazardsHydrated && <DiffLegend />}
+      {mapReady && hazardsHydrated && <DiffMarkersLayer map={map.current} />}
     </div>
   );
 }

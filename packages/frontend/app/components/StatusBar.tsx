@@ -1,6 +1,7 @@
 'use client';
 
 import { CheckCircle, AlertTriangle, Activity, Cpu, Wifi, MapPin } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 // ─────────────────────────────────────────────
 // Shared style constants
@@ -111,6 +112,32 @@ function OnnxPill({ active }: { active: boolean }) {
 // ─────────────────────────────────────────────
 
 export function StatusBar() {
+  const [metrics, setMetrics] = useState({
+    hazards: 0,
+    nodes: 0,
+  });
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch('/api/metrics/dashboard');
+        if (res.ok) {
+          const data = await res.json();
+          setMetrics({
+            hazards: data.hazards?.total || 0,
+            nodes: data.network?.activeNodes || 0,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch status bar metrics:', error);
+      }
+    };
+
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <footer
       className="vigia-statusbar"
@@ -148,7 +175,7 @@ export function StatusBar() {
         {/* Hazard count */}
         <Seg onClick={() => {}} title="Active hazard reports">
           <AlertTriangle size={10} strokeWidth={2.2} style={{ color: 'var(--v-accent)', flexShrink: 0 }} />
-          <span style={TEXT}>7 hazards</span>
+          <span style={TEXT}>{metrics.hazards} hazards</span>
         </Seg>
 
       </div>
@@ -159,7 +186,7 @@ export function StatusBar() {
         {/* Network nodes */}
         <Seg onClick={() => {}} title="Connected DePIN nodes">
           <Activity size={10} strokeWidth={2.2} style={{ color: 'var(--v-accent)', flexShrink: 0 }} />
-          <span style={TEXT}>48 nodes</span>
+          <span style={TEXT}>{metrics.nodes} nodes</span>
         </Seg>
 
         <Sep />

@@ -1,62 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  BedrockAgentRuntimeClient,
-  InvokeAgentCommand,
-} from '@aws-sdk/client-bedrock-agent-runtime';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 
 export async function POST(req: NextRequest) {
   try {
-    const { hazardIds } = await req.json();
+    const body = await req.json();
+    const { hazardIds, hazards } = body;
 
-    if (!hazardIds || !Array.isArray(hazardIds) || hazardIds.length === 0) {
+    if (!hazardIds || hazardIds.length === 0) {
       return NextResponse.json(
-        { error: 'hazardIds array required' },
+        { error: 'hazardIds required' },
         { status: 400 }
       );
     }
 
-    const agentId = process.env.NEXT_PUBLIC_BEDROCK_AGENT_ID;
-    const agentAliasId = process.env.NEXT_PUBLIC_BEDROCK_AGENT_ALIAS_ID;
     const region = process.env.NEXT_PUBLIC_AWS_REGION || 'us-east-1';
+    const lambdaClient = new LambdaClient({ region });
 
-    if (!agentId || !agentAliasId) {
-      return NextResponse.json(
-        { error: 'Agent configuration missing' },
-        { status: 503 }
-      );
-    }
+    // Call Lambda directly for maintenance prioritization
+    const payload = {
+      messageVersion: '1.0',
+      agent: {
+        name: 'vigia-auditor-strategist',
+        id: 'TAWWC3SQ0L',
+        alias: 'TSTALIASID',
+        version: 'DRAFT'
+      },
+      actionGroup: 'MaintenanceLogistics',
+      apiPath: '/prioritize-repair-queue',
+      httpMethod: 'POST',
+      parameters: [
+        { name: 'hazardIds', type: 'array', value: JSON.stringify(hazardIds) }
+      ]
+    };
 
-    const client = new BedrockAgentRuntimeClient({ region });
-
-    const inputText = `Prioritize these hazards for repair: ${hazardIds.join(', ')}. Use the prioritize_repair_queue tool to rank them by severity, traffic density, and age. Then use estimate_repair_cost to calculate the total budget required.`;
-
-    const command = new InvokeAgentCommand({
-      agentId,
-      agentAliasId,
-      sessionId: `maintenance-priority-${Date.now()}`,
-      inputText,
+    const command = new InvokeCommand({
+      FunctionName: 'VigiaStack-IntelligenceWithHazardsMaintenanceLogis-DFZlsGUW5tBE',
+      Payload: JSON.stringify(payload),
     });
 
-    const response = await client.send(command);
-
-    let completion = '';
-    if (response.completion) {
-      for await (const event of response.completion) {
-        if (event.chunk?.bytes) {
-          completion += new TextDecoder().decode(event.chunk.bytes);
-        }
-      }
+    const response = await lambdaClient.send(command);
+    const result = JSON.parse(new TextDecoder().decode(response.Payload));
+    
+    // Extract the body from Lambda response
+    if (result.response?.responseBody?.['application/json']?.body) {
+      const body = JSON.parse(result.response.responseBody['application/json'].body);
+      
+      // Format response for agent display
+      const queue = body.prioritizedQueue || [];
+      const message = `Maintenance Priority Analysis:\n\n${queue.map((item: any, i: number) => 
+        `**${i + 1}. ${item.hazardType}** (Priority: ${item.priority.toFixed(1)}/100)\n` +
+        `   - Location: (${item.lat?.toFixed(4)}, ${item.lon?.toFixed(4)})\n` +
+        `   - Estimated Cost: $${item.estimatedCost}\n` +
+        `   - Reasoning: ${item.reasoning}`
+      ).join('\n\n')}`;
+      
+      return NextResponse.json({ 
+        message,
+        prioritizedQueue: queue,
+        analysis: message
+      });
     }
 
-    return NextResponse.json({
-      analysis: completion || 'No response from agent.',
-      sessionId: response.sessionId,
-    });
-  } catch (err: any) {
-    console.error('[maintenance-priority] Error:', err);
-    return NextResponse.json(
-      { error: err.message || 'Maintenance priority analysis failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Invalid Lambda response', raw: result }, { status: 500 });
+  } catch (error) {
+    console.error('Maintenance priority error:', error);
+    return NextResponse.json({ error: 'Failed to prioritize maintenance' }, { status: 500 });
   }
 }

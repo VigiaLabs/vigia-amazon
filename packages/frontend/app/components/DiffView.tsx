@@ -91,6 +91,12 @@ export function DiffView({ diffMap }: DiffViewProps) {
   const mapBRef = useRef<HTMLDivElement>(null);
   const mapAInstance = useRef<maplibregl.Map | null>(null);
   const mapBInstance = useRef<maplibregl.Map | null>(null);
+
+  const asNumber = (value: unknown, fallback: number) =>
+    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+  const fixed1OrNA = (value: unknown) =>
+    (typeof value === 'number' && Number.isFinite(value)) ? value.toFixed(1) : 'N/A';
   
   const [selectedHazard, setSelectedHazard] = useState<any>(null);
   const [syncMaps, setSyncMaps] = useState(true);
@@ -99,6 +105,10 @@ export function DiffView({ diffMap }: DiffViewProps) {
   const [agentAnalysis, setAgentAnalysis] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [mapsLoaded, setMapsLoaded] = useState({ a: false, b: false });
+
+  const degradationScoreValue = asNumber((diffMap as any)?.summary?.degradationScore, 50);
+  const timeSpanDaysText = fixed1OrNA((diffMap as any)?.summary?.timeSpanDays);
+  const degradationScoreText = fixed1OrNA((diffMap as any)?.summary?.degradationScore);
 
   // Fetch agent analysis on mount
   useEffect(() => {
@@ -125,17 +135,24 @@ export function DiffView({ diffMap }: DiffViewProps) {
 
   const generateFallbackAnalysis = (diffMap: DiffMapFile) => {
     const { summary, changes } = diffMap;
+
+    const degradationScore = asNumber((summary as any)?.degradationScore, 50);
+    const timeSpanDays = asNumber((summary as any)?.timeSpanDays, 0);
+    const totalNew = asNumber((summary as any)?.totalNew, 0);
+    const totalFixed = asNumber((summary as any)?.totalFixed, 0);
+    const totalWorsened = asNumber((summary as any)?.totalWorsened, 0);
+    const netChange = asNumber((summary as any)?.netChange, 0);
     
     let degradationLevel = 'moderate';
     let degradationText = '';
     
-    if (summary.degradationScore > 70) {
+    if (degradationScore > 70) {
       degradationLevel = 'severe';
       degradationText = 'The road infrastructure has experienced severe degradation';
-    } else if (summary.degradationScore > 50) {
+    } else if (degradationScore > 50) {
       degradationLevel = 'significant';
       degradationText = 'The road infrastructure shows significant deterioration';
-    } else if (summary.degradationScore > 30) {
+    } else if (degradationScore > 30) {
       degradationLevel = 'moderate';
       degradationText = 'The road infrastructure has moderate changes';
     } else {
@@ -145,17 +162,17 @@ export function DiffView({ diffMap }: DiffViewProps) {
 
     const recommendations = [];
     
-    if (summary.totalNew > 10) {
+    if (totalNew > 10) {
       recommendations.push('Immediate inspection required for newly identified hazards');
     }
-    if (summary.totalWorsened > 5) {
+    if (totalWorsened > 5) {
       recommendations.push('Prioritize repair of worsening hazards to prevent further deterioration');
     }
-    if (summary.degradationScore > 60) {
+    if (degradationScore > 60) {
       recommendations.push('Allocate emergency maintenance budget for critical areas');
     }
-    if (summary.totalFixed > 0) {
-      recommendations.push(`Continue maintenance efforts - ${summary.totalFixed} hazards successfully addressed`);
+    if (totalFixed > 0) {
+      recommendations.push(`Continue maintenance efforts - ${totalFixed} hazards successfully addressed`);
     }
     if (recommendations.length === 0) {
       recommendations.push('Continue regular monitoring');
@@ -164,8 +181,8 @@ export function DiffView({ diffMap }: DiffViewProps) {
 
     return {
       traceId: `analysis-${Date.now()}`,
-      summary: `${degradationText} over ${summary.timeSpanDays.toFixed(1)} days. ${summary.totalNew} new hazards detected, ${summary.totalFixed} hazards fixed, and ${summary.totalWorsened} hazards worsened. Net change: ${summary.netChange > 0 ? '+' : ''}${summary.netChange} hazards.`,
-      degradationAssessment: `Degradation Level: ${degradationLevel.toUpperCase()} (Score: ${summary.degradationScore.toFixed(1)}/100). ${summary.netChange > 0 ? 'Infrastructure quality is declining and requires attention' : 'Infrastructure quality is stable or improving'}.`,
+      summary: `${degradationText} over ${timeSpanDays.toFixed(1)} days. ${totalNew} new hazards detected, ${totalFixed} hazards fixed, and ${totalWorsened} hazards worsened. Net change: ${netChange > 0 ? '+' : ''}${netChange} hazards.`,
+      degradationAssessment: `Degradation Level: ${degradationLevel.toUpperCase()} (Score: ${degradationScore.toFixed(1)}/100). ${netChange > 0 ? 'Infrastructure quality is declining and requires attention' : 'Infrastructure quality is stable or improving'}.`,
       recommendations,
       confidence: 0.85,
       analyzedAt: Date.now(),
@@ -203,13 +220,89 @@ export function DiffView({ diffMap }: DiffViewProps) {
         const centerA = diffMap.sessionA.coverage?.centerPoint || { lat: 0, lon: 0 };
         const centerB = diffMap.sessionB.coverage?.centerPoint || { lat: 0, lon: 0 };
 
-        console.log('Initializing maps with centers:', centerA, centerB);
+        const diffHazardPoints = [
+          ...(diffMap.changes?.newHazards ?? []),
+          ...(diffMap.changes?.fixedHazards ?? []),
+          ...(diffMap.changes?.worsenedHazards ?? []),
+          ...(diffMap.changes?.unchangedHazards ?? []),
+        ];
+
+        console.log('🗺️ DiffView session data:', {
+          sessionA: {
+            id: diffMap.sessionA.sessionId,
+            location: diffMap.sessionA.location,
+            coverage: diffMap.sessionA.coverage,
+            centerPoint: centerA,
+            hazardCount: diffHazardPoints.length,
+          },
+          sessionB: {
+            id: diffMap.sessionB.sessionId,
+            location: diffMap.sessionB.location,
+            coverage: diffMap.sessionB.coverage,
+            centerPoint: centerB,
+            hazardCount: diffHazardPoints.length,
+          }
+        });
+
+        // Calculate center from hazards if coverage.centerPoint is missing
+        const calculateCenterFromHazards = (hazards: any[]) => {
+          if (!hazards || hazards.length === 0) return null;
+          const sum = hazards.reduce((acc, h) => ({
+            lat: acc.lat + (h.lat || 0),
+            lon: acc.lon + (h.lon || 0),
+          }), { lat: 0, lon: 0 });
+          return {
+            lat: sum.lat / hazards.length,
+            lon: sum.lon / hazards.length,
+          };
+        };
+
+        // City coordinates lookup
+        const cityCoordinates: Record<string, { lat: number; lon: number }> = {
+          'rourkela': { lat: 22.2604, lon: 84.8536 },
+          'delhi': { lat: 28.6139, lon: 77.2090 },
+          'mumbai': { lat: 19.0760, lon: 72.8777 },
+          'bangalore': { lat: 12.9716, lon: 77.5946 },
+          'chennai': { lat: 13.0827, lon: 80.2707 },
+        };
+
+        // Get coordinates from location data
+        const getCityCoordinates = (location: any) => {
+          if (!location?.city) return null;
+          const cityKey = location.city.toLowerCase();
+          return cityCoordinates[cityKey] || null;
+        };
+
+        // Validate coordinates
+        const isValidCoord = (lat: number, lon: number) => 
+          lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 && lat !== 0 && lon !== 0;
+
+        // Try: coverage.centerPoint → hazards center → city lookup → default
+        let validCenterA = centerA;
+        if (!isValidCoord(centerA.lat, centerA.lon)) {
+          const fromHazards = calculateCenterFromHazards(diffHazardPoints as any);
+          const fromCity = getCityCoordinates(diffMap.sessionA.location);
+          validCenterA = (fromHazards && isValidCoord(fromHazards.lat, fromHazards.lon))
+            ? fromHazards
+            : (fromCity || { lat: 20.5937, lon: 78.9629 });
+        }
+
+        let validCenterB = centerB;
+        if (!isValidCoord(centerB.lat, centerB.lon)) {
+          const fromHazards = calculateCenterFromHazards(diffHazardPoints as any);
+          const fromCity = getCityCoordinates(diffMap.sessionB.location);
+          validCenterB = (fromHazards && isValidCoord(fromHazards.lat, fromHazards.lon))
+            ? fromHazards
+            : (fromCity || { lat: 20.5937, lon: 78.9629 });
+        }
+
+        console.log('✅ Using validated centers:', validCenterA, validCenterB);
 
         // Map A (older session)
         mapAInstance.current = new maplibregl.Map({
           container: mapARef.current!,
           style: styleSpec,
-          center: [centerA.lon, centerA.lat],
+          center: [validCenterA.lon, validCenterA.lat],
           zoom: 13,
           attributionControl: false,
         });
@@ -218,7 +311,7 @@ export function DiffView({ diffMap }: DiffViewProps) {
         mapBInstance.current = new maplibregl.Map({
           container: mapBRef.current!,
           style: styleSpec,
-          center: [centerB.lon, centerB.lat],
+          center: [validCenterB.lon, validCenterB.lat],
           zoom: 13,
           attributionControl: false,
         });
@@ -304,6 +397,19 @@ export function DiffView({ diffMap }: DiffViewProps) {
 
   // Re-apply filter when the user switches map style in settings
   useEffect(() => {
+    if (!mapAInstance.current || !mapBInstance.current) return;
+    
+    const newStyle = getMapStyle(settings.mapStyle);
+    
+    // Update map style
+    if (mapAInstance.current.isStyleLoaded()) {
+      mapAInstance.current.setStyle(newStyle);
+    }
+    if (mapBInstance.current.isStyleLoaded()) {
+      mapBInstance.current.setStyle(newStyle);
+    }
+    
+    // Apply CSS filter after style loads
     if (mapsLoaded.a) applyMapFilter(mapARef.current, settings.mapStyle);
     if (mapsLoaded.b) applyMapFilter(mapBRef.current, settings.mapStyle);
   }, [settings.mapStyle, mapsLoaded]);
@@ -405,7 +511,7 @@ export function DiffView({ diffMap }: DiffViewProps) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: '0.62rem', color: C.textMut, fontFamily: MONO }}>
-            {diffMap.summary.timeSpanDays.toFixed(1)}d apart
+            {timeSpanDaysText === 'N/A' ? 'N/A' : `${timeSpanDaysText}d apart`}
           </span>
           <label style={{
             display: 'flex', alignItems: 'center', gap: 5,
@@ -434,10 +540,10 @@ export function DiffView({ diffMap }: DiffViewProps) {
         flexShrink: 0,
       }}>
         {[
-          { label: 'NEW',       value: diffMap.summary.totalNew,       color: C.red,    dim: C.redDim    },
-          { label: 'FIXED',     value: diffMap.summary.totalFixed,     color: C.green,  dim: C.greenDim  },
-          { label: 'WORSENED',  value: diffMap.summary.totalWorsened,  color: C.yellow, dim: C.yellowDim },
-          { label: 'UNCHANGED', value: diffMap.summary.totalUnchanged ?? 0, color: C.textSec, dim: C.hover },
+          { label: 'NEW',       value: asNumber((diffMap as any)?.summary?.totalNew, 0),       color: C.red,    dim: C.redDim    },
+          { label: 'FIXED',     value: asNumber((diffMap as any)?.summary?.totalFixed, 0),     color: C.green,  dim: C.greenDim  },
+          { label: 'WORSENED',  value: asNumber((diffMap as any)?.summary?.totalWorsened, 0),  color: C.yellow, dim: C.yellowDim },
+          { label: 'UNCHANGED', value: asNumber((diffMap as any)?.summary?.totalUnchanged, 0), color: C.textSec, dim: C.hover },
         ].map(({ label, value, color, dim }) => (
           <div key={label} style={{
             display: 'flex', alignItems: 'center', gap: 6,
@@ -454,11 +560,11 @@ export function DiffView({ diffMap }: DiffViewProps) {
           <span style={{ fontSize: '0.58rem', color: C.textMut, fontFamily: MONO, letterSpacing: '0.06em' }}>DEGRADATION</span>
           <span style={{
             fontSize: '0.72rem', fontWeight: 700, fontFamily: MONO,
-            color: diffMap.summary.degradationScore > 60 ? C.red
-                 : diffMap.summary.degradationScore > 40 ? C.yellow
+            color: degradationScoreValue > 60 ? C.red
+                 : degradationScoreValue > 40 ? C.yellow
                  : C.green,
           }}>
-            {diffMap.summary.degradationScore.toFixed(1)}
+            {degradationScoreText}
             <span style={{ fontWeight: 400, fontSize: '0.58rem', color: C.textMut }}>/100</span>
           </span>
         </div>
@@ -527,11 +633,6 @@ export function DiffView({ diffMap }: DiffViewProps) {
             )}
             <div ref={mapBRef} style={{ width: '100%', height: '100%' }} />
           </div>
-        </div>
-
-        {/* Chat panel */}
-        <div style={{ width: 400, flexShrink: 0 }}>
-          <DiffChat diffMap={diffMap} agentAnalysis={agentAnalysis} />
         </div>
       </div>
     </div>

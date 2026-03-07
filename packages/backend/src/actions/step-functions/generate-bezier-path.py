@@ -19,6 +19,22 @@ def lambda_handler(event, context):
     end = event['end']
     constraints = event.get('constraints', {})
     
+    # Parse start/end if they're strings (from Bedrock Agent)
+    if isinstance(start, str):
+        # Parse string like "{lon=-71.059, lat=42.359}"
+        import re
+        lat_match = re.search(r'lat=([^,}]+)', start)
+        lon_match = re.search(r'lon=([^,}]+)', start)
+        if lat_match and lon_match:
+            start = {'lat': float(lat_match.group(1)), 'lon': float(lon_match.group(1))}
+    
+    if isinstance(end, str):
+        import re
+        lat_match = re.search(r'lat=([^,}]+)', end)
+        lon_match = re.search(r'lon=([^,}]+)', end)
+        if lat_match and lon_match:
+            end = {'lat': float(lat_match.group(1)), 'lon': float(lon_match.group(1))}
+    
     # Calculate midpoint
     mid_lat = (start['lat'] + end['lat']) / 2
     mid_lon = (start['lon'] + end['lon']) / 2

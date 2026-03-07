@@ -28,6 +28,31 @@ import { IntroPage, useIntroComplete } from './components/IntroPage';
 type MainTab    = 'map' | 'sentinel' | string;
 type ConsoleTab = 'traces' | 'ledger' | 'console' | 'network';
 
+// Helper to generate diff analysis text
+function generateDiffAnalysisText(diffMap: any) {
+  if (!diffMap?.summary) return undefined;
+  const { summary } = diffMap;
+  
+  let degradationLevel = 'MODERATE';
+  if (summary.degradationScore > 70) degradationLevel = 'SEVERE';
+  else if (summary.degradationScore > 50) degradationLevel = 'SIGNIFICANT';
+  else if (summary.degradationScore > 30) degradationLevel = 'MODERATE';
+  else degradationLevel = 'MINIMAL';
+  
+  const statusText = summary.netChange > 0 ? 'Infrastructure quality is declining and requires attention' : 'Infrastructure quality is stable or improving';
+  const timeSpan = summary.timeSpanDays != null ? summary.timeSpanDays.toFixed(1) : 'N/A';
+  const degradationScore = summary.degradationScore != null ? summary.degradationScore.toFixed(1) : 'N/A';
+  
+  return `**Diff Analysis** (Auto-generated from session comparison)
+
+The road infrastructure has ${degradationLevel.toLowerCase()} changes over ${timeSpan} days. ${summary.totalNew || 0} new hazards detected, ${summary.totalFixed || 0} hazards fixed, and ${summary.totalWorsened || 0} hazards worsened. Net change: ${summary.netChange > 0 ? '+' : ''}${summary.netChange || 0} hazards.
+
+Degradation Level: **${degradationLevel}** (Score: ${degradationScore}/100). ${statusText}.
+
+**Recommendations:**
+${summary.totalNew > 10 ? '• Immediate inspection required for newly identified hazards\n' : ''}${summary.totalWorsened > 5 ? '• Prioritize repair of worsening hazards to prevent further deterioration\n' : ''}${summary.degradationScore > 60 ? '• Allocate emergency maintenance budget for critical areas\n' : ''}${summary.totalFixed > 0 ? `• Continue maintenance efforts - ${summary.totalFixed} hazards successfully addressed\n` : ''}${summary.totalNew === 0 && summary.totalWorsened === 0 ? '• Continue regular monitoring\n• Schedule routine maintenance' : ''}`;
+}
+
 export default function Dashboard() {
   const { settings } = useSettings();
   const [introComplete, completeIntro] = useIntroComplete();
@@ -47,6 +72,171 @@ export default function Dashboard() {
   // Track which content tab is showing for crossfade key
   const [mainTabKey,         setMainTabKey]         = useState(0);
   const [consoleTabKey,      setConsoleTabKey]      = useState(0);
+
+  // Persist tabs to sessionStorage (clears on browser close, persists on reload)
+  const hasHydratedTabs = useRef(false);
+  const TAB_STORAGE_KEY = 'vigia:tabs:v2';
+
+  type PersistedTab = {
+    id: string;
+    label: string;
+    session?: any;
+    diffMap?: any;
+  };
+
+  type PersistedTabsStateV2 = {
+    version: 2;
+    sidebarActivity: 'explorer' | 'detection' | 'network' | 'maintenance';
+    explorerTabs: PersistedTab[];
+    detectionTabs: PersistedTab[];
+    activeMainTab: MainTab | null;
+    explorerActiveTab?: MainTab | null;
+    detectionActiveTab?: MainTab | null;
+  };
+  
+  // Load tabs from sessionStorage on mount
+  useEffect(() => {
+    if (hasHydratedTabs.current) return;
+
+    try {
+      const savedRawV2 = sessionStorage.getItem(TAB_STORAGE_KEY);
+      const savedRawLegacy = !savedRawV2 ? sessionStorage.getItem('vigia:tabs') : null;
+      const savedRaw = savedRawV2 ?? savedRawLegacy;
+      if (!savedRaw) return;
+
+      const parsed = JSON.parse(savedRaw) as any;
+
+      const data: Partial<PersistedTabsStateV2> = (parsed?.version === 2)
+        ? parsed
+        : {
+            version: 2,
+            sidebarActivity: parsed?.sidebarActivity,
+            explorerTabs: parsed?.explorerTabs,
+            detectionTabs: parsed?.detectionTabs,
+            activeMainTab: parsed?.activeMainTab ?? null,
+          };
+
+      const safeTabs = (tabs: any): PersistedTab[] => {
+        if (!Array.isArray(tabs)) return [];
+        return tabs
+          .filter((t) => t && typeof t.id === 'string' && typeof t.label === 'string')
+          .map((t) => ({
+            id: t.id,
+            label: t.label,
+            session: t.session,
+            diffMap: t.diffMap,
+          }));
+      };
+
+      const restoredExplorerTabs = safeTabs(data.explorerTabs);
+      const restoredDetectionTabs = safeTabs(data.detectionTabs);
+
+      const restoredActivity = (data.sidebarActivity === 'explorer' || data.sidebarActivity === 'detection' || data.sidebarActivity === 'network' || data.sidebarActivity === 'maintenance')
+        ? data.sidebarActivity
+        : 'explorer';
+
+      // Resolve active tab to something that actually exists.
+      let resolvedActiveMainTab: MainTab | null = data.activeMainTab ?? null;
+      if (restoredActivity === 'explorer') {
+        if (resolvedActiveMainTab && !restoredExplorerTabs.some(t => t.id === resolvedActiveMainTab)) {
+          resolvedActiveMainTab = restoredExplorerTabs.length ? restoredExplorerTabs[restoredExplorerTabs.length - 1].id : null;
+        }
+      } else if (restoredActivity === 'detection') {
+        if (resolvedActiveMainTab && !restoredDetectionTabs.some(t => t.id === resolvedActiveMainTab)) {
+          resolvedActiveMainTab = restoredDetectionTabs.length ? restoredDetectionTabs[restoredDetectionTabs.length - 1].id : 'sentinel';
+        }
+      } else {
+        resolvedActiveMainTab = null;
+      }
+
+      setSidebarActivity(restoredActivity);
+      setExplorerTabs(restoredExplorerTabs as any);
+      setDetectionTabs(restoredDetectionTabs as any);
+      setExplorerActiveTab((data.explorerActiveTab ?? null) as any);
+      setDetectionActiveTab((data.detectionActiveTab ?? null) as any);
+      setActiveMainTab(resolvedActiveMainTab);
+
+      // Rehydrate selected session from the active tab (keeps map content on refresh).
+      if (restoredActivity === 'explorer' && resolvedActiveMainTab) {
+        const tab = restoredExplorerTabs.find(t => t.id === resolvedActiveMainTab);
+        setSelectedSession(tab?.session ?? null);
+      } else {
+        setSelectedSession(null);
+      }
+
+      console.log('✅ Restored tabs from sessionStorage:', { restoredActivity, resolvedActiveMainTab });
+
+      // If we loaded legacy state, immediately migrate it to v2 so subsequent loads are consistent.
+      if (!savedRawV2) {
+        try {
+          const payload: PersistedTabsStateV2 = {
+            version: 2,
+            explorerTabs: restoredExplorerTabs,
+            detectionTabs: restoredDetectionTabs,
+            activeMainTab: resolvedActiveMainTab,
+            sidebarActivity: restoredActivity,
+            explorerActiveTab: (data.explorerActiveTab ?? null) as any,
+            detectionActiveTab: (data.detectionActiveTab ?? null) as any,
+          };
+          sessionStorage.setItem(TAB_STORAGE_KEY, JSON.stringify(payload));
+        } catch {
+          // Best-effort migration only
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to restore tabs:', err);
+    } finally {
+      // Mark hydration complete only AFTER attempting restore, so we don't overwrite stored tabs
+      // with the initial empty state during the first mount.
+      hasHydratedTabs.current = true;
+    }
+  }, []);
+
+  // Save tabs to sessionStorage whenever they change
+  useEffect(() => {
+    if (!hasHydratedTabs.current) return;
+    try {
+      const isPersistableTab = (t: any) => {
+        // Persist across reloads, but NOT unsaved/draft tabs.
+        if (!t) return false;
+        if (t.isDirty) return false;
+        if (t.isNewSession) return false;
+        return typeof t.id === 'string' && typeof t.label === 'string';
+      };
+
+      const toPersistedTab = (t: any): PersistedTab => ({
+        id: t.id,
+        label: t.label,
+        session: t.session,
+        diffMap: t.diffMap,
+      });
+
+      const persistedExplorerTabs = explorerTabs.filter(isPersistableTab).map(toPersistedTab);
+      const persistedDetectionTabs = detectionTabs.filter(isPersistableTab).map(toPersistedTab);
+
+      const activeIsPersisted = (
+        sidebarActivity === 'explorer'
+          ? persistedExplorerTabs.some(t => t.id === activeMainTab)
+          : sidebarActivity === 'detection'
+            ? persistedDetectionTabs.some(t => t.id === activeMainTab)
+            : false
+      );
+
+      const payload: PersistedTabsStateV2 = {
+        version: 2,
+        explorerTabs: persistedExplorerTabs,
+        detectionTabs: persistedDetectionTabs,
+        activeMainTab: activeIsPersisted ? activeMainTab : null,
+        sidebarActivity,
+        explorerActiveTab,
+        detectionActiveTab,
+      };
+
+      sessionStorage.setItem(TAB_STORAGE_KEY, JSON.stringify(payload));
+    } catch (err) {
+      console.warn('Failed to save tabs:', err);
+    }
+  }, [explorerTabs, detectionTabs, activeMainTab, sidebarActivity, explorerActiveTab, detectionActiveTab]);
 
   // ── ⌘K global listener ───────────────────
   useEffect(() => {
@@ -73,7 +263,35 @@ export default function Dashboard() {
   useEffect(() => {
     const handleMaintenanceReport = (event: CustomEvent) => {
       setSidebarActivity('maintenance');
-      (window as any).__maintenanceHazard = event.detail.hazard;
+
+      const payload = (event as any)?.detail;
+      const hazards = Array.isArray(payload?.hazards) ? payload.hazards : null;
+      const single = payload?.hazard;
+
+      if (hazards && hazards.length) {
+        (window as any).__maintenanceHazards = hazards;
+        try {
+          sessionStorage.setItem('vigia:maintenance:queuedHazards', JSON.stringify({ version: 1, hazards }));
+        } catch {
+          // best-effort
+        }
+
+        const setter = (window as any).__setMaintenanceHazard;
+        if (typeof setter === 'function') setter(hazards[0]);
+        return;
+      }
+
+      if (single) {
+        (window as any).__maintenanceHazard = single;
+        try {
+          sessionStorage.setItem('vigia:maintenance:queuedHazards', JSON.stringify({ version: 1, hazards: [single] }));
+        } catch {
+          // best-effort
+        }
+
+        const setter = (window as any).__setMaintenanceHazard;
+        if (typeof setter === 'function') setter(single);
+      }
     };
     const handleSplitView = (event: CustomEvent) => {
       setSplitView(event.detail);
@@ -469,6 +687,23 @@ export default function Dashboard() {
         onSaveSession={saveActiveSession}
         onActivityChange={handleActivityChange}
         onConsoleTab={(tab) => switchConsoleTab(tab as any)}
+        onDropPinA={() => {
+          if (typeof window !== 'undefined') {
+            (window as any).__dropPinMode = 'A';
+            (window as any).__setDropPinMode?.('A');
+          }
+        }}
+        onDropPinB={() => {
+          if (typeof window !== 'undefined') {
+            (window as any).__dropPinMode = 'B';
+            (window as any).__setDropPinMode?.('B');
+          }
+        }}
+        onCalculateRoute={() => {
+          if (typeof window !== 'undefined') {
+            (window as any).__calculatePinRoute?.();
+          }
+        }}
       />
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
@@ -724,7 +959,34 @@ export default function Dashboard() {
         {sidebarActivity === 'explorer' && (
           <AgentChatPanel
             contextType="livemap"
-            context={{ sessionId: selectedSession?.sessionId, city: selectedSession?.location?.city }}
+            context={{ 
+              sessionId: selectedSession?.sessionId, 
+              city: selectedSession?.location?.city,
+              diffAnalysis: (() => {
+                const activeTab = explorerTabs.find(t => t.id === activeMainTab);
+                const analysis = activeTab?.diffMap ? 
+                  generateDiffAnalysisText(activeTab.diffMap) : undefined;
+                console.log('🔍 Diff analysis:', { activeMainTab, activeTab: activeTab?.label, hasDiffMap: !!activeTab?.diffMap, analysis });
+                return analysis;
+              })(),
+              currentDiff: (() => {
+                const activeTab = explorerTabs.find(t => t.id === activeMainTab);
+                if (!activeTab?.diffMap) return undefined;
+                const dm = activeTab.diffMap;
+                return {
+                  displayName: dm.displayName,
+                  sessionA: { id: dm.sessionA.sessionId, city: dm.sessionA.location?.city, timestamp: dm.sessionA.timestamp },
+                  sessionB: { id: dm.sessionB.sessionId, city: dm.sessionB.location?.city, timestamp: dm.sessionB.timestamp },
+                  summary: dm.summary,
+                  changes: {
+                    newCount: dm.changes.new?.length || 0,
+                    fixedCount: dm.changes.fixed?.length || 0,
+                    worsenedCount: dm.changes.worsened?.length || 0,
+                    unchangedCount: dm.changes.unchanged?.length || 0,
+                  }
+                };
+              })()
+            }}
             availableSessions={explorerTabs.map(tab => ({
               sessionId: tab.session?.sessionId || tab.id,
               label: tab.label,

@@ -14,6 +14,9 @@ interface TopBarProps {
   onSaveSession?: () => void;
   onActivityChange?: (activity: SidebarActivity) => void;
   onConsoleTab?: (tab: ConsoleTab) => void;
+  onDropPinA?: () => void;
+  onDropPinB?: () => void;
+  onCalculateRoute?: () => void;
 }
 
 export function TopBar({
@@ -23,12 +26,38 @@ export function TopBar({
   onSaveSession,
   onActivityChange,
   onConsoleTab,
+  onDropPinA,
+  onDropPinB,
+  onCalculateRoute,
 }: TopBarProps) {
   const headerRef = useRef<HTMLElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const [openMenu, setOpenMenu] = useState<TopMenu | null>(null);
   const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  const [metrics, setMetrics] = useState({ hazards: 0, nodes: 0 });
+
+  // Fetch metrics from API
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch('/api/metrics/dashboard');
+        if (res.ok) {
+          const data = await res.json();
+          setMetrics({
+            hazards: data.hazards?.total || 0,
+            nodes: data.network?.activeNodes || 0,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch topbar metrics:', error);
+      }
+    };
+
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const menuItems = useMemo(() => {
     type Item =
@@ -52,6 +81,11 @@ export function TopBar({
         { type: 'item', label: 'Maintenance', action: () => onActivityChange?.('maintenance'), disabled: !onActivityChange },
       ],
       Analysis: [
+        { type: 'item', label: 'Route Planning', disabled: true },
+        { type: 'item', label: '  Drop Pin A', action: safe(onDropPinA), disabled: !onDropPinA },
+        { type: 'item', label: '  Drop Pin B', action: safe(onDropPinB), disabled: !onDropPinB },
+        { type: 'item', label: '  Calculate Route', action: safe(onCalculateRoute), disabled: !onCalculateRoute },
+        { type: 'sep' },
         { type: 'item', label: 'Network Analysis', action: () => onActivityChange?.('network'), disabled: !onActivityChange },
         { type: 'item', label: 'Maintenance Priority', action: () => onActivityChange?.('maintenance'), disabled: !onActivityChange },
       ],
@@ -67,7 +101,7 @@ export function TopBar({
     };
 
     return items;
-  }, [onActivityChange, onCommandOpen, onConsoleTab, onNewSession, onSaveSession, onSettingsOpen]);
+  }, [onActivityChange, onCommandOpen, onConsoleTab, onNewSession, onSaveSession, onSettingsOpen, onDropPinA, onDropPinB, onCalculateRoute]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -338,7 +372,7 @@ export function TopBar({
             fontSize: '0.63rem', fontWeight: 600, letterSpacing: '0.01em',
             fontFamily: 'var(--v-font-mono)', color: 'var(--v-accent-hover)',
           }}>
-            7 hazards
+            {metrics.hazards} hazards
           </span>
         </div>
 
@@ -354,7 +388,7 @@ export function TopBar({
             fontSize: '0.63rem', fontWeight: 600, letterSpacing: '0.01em',
             fontFamily: 'var(--v-font-mono)', color: 'var(--v-accent-hover)',
           }}>
-            48 nodes
+            {metrics.nodes} nodes
           </span>
         </div>
 

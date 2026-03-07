@@ -415,10 +415,31 @@ npm install
 cd packages/infrastructure
 npx cdk deploy --all --require-approval never
 
+# Seed demo data (880+ records across 10 global cities)
+node scripts/seed-comprehensive-demo-data.js
+
 # Start frontend dev server
-cd ../frontend
+cd packages/frontend
 npm run dev
 ```
+
+### Demo Data
+
+VIGIA includes a comprehensive demo dataset with **880+ records** across **6 DynamoDB tables**:
+
+- **650 Hazards** - Infrastructure telemetry (potholes, debris, accidents, animals)
+- **100 Ledger Entries** - DePIN contribution tracking with SHA-256 hash chain
+- **50 Agent Traces** - Bedrock AI reasoning logs (ReAct pattern)
+- **80 Maintenance Reports** - Repair queue with cost estimates
+- **50 Economic Metrics** - ROI calculations and financial analysis
+
+**Geographic Coverage**: 10 cities across 3 continents (USA, UK, France, Japan, Australia, India)
+
+**Documentation**:
+- [Data Ecosystem Analysis](./docs/DATA_ECOSYSTEM.md) - Complete schema and access patterns
+- [Demo Data Guide](./docs/DEMO_DATA_GUIDE.md) - Quick reference for judges
+- [Visual Summary](./docs/DATA_INFRASTRUCTURE_VISUAL.md) - ASCII diagrams and flow charts
+- [Seeding Instructions](./scripts/README_SEEDING.md) - How to populate demo data
 
 ### Environment Variables
 

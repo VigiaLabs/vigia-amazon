@@ -227,12 +227,24 @@ export class IntelligenceStack extends Construct {
       });
 
       // ═══════════════════════════════════════════════════════════
-      // PHASE 3: Amazon Location Service Geofences
+      // PHASE 3: Amazon Location Service Geofences & Route Calculator
       // ═══════════════════════════════════════════════════════════
 
       this.geofenceCollection = new location.CfnGeofenceCollection(this, 'VigiaRestrictedZones', {
         collectionName: 'VigiaRestrictedZones',
         description: 'Geofence collection for urban planning zone restrictions',
+      });
+
+      // Route Calculator for pin-based routing
+      const routeCalculator = new location.CfnRouteCalculator(this, 'VigiaRouteCalculator', {
+        calculatorName: 'VigiaRouteCalculator',
+        dataSource: 'Esri',
+        description: 'Route calculator for fastest and safest path planning',
+      });
+
+      new cdk.CfnOutput(this, 'RouteCalculatorName', {
+        value: routeCalculator.calculatorName!,
+        description: 'Name of Location Service Route Calculator',
       });
 
       // Note: Geofences are added via API calls in the Lambda functions
@@ -322,6 +334,14 @@ export class IntelligenceStack extends Construct {
       this.urbanPlannerFn.addEnvironment('STATE_MACHINE_ARN', this.urbanPlannerStateMachine.stateMachineArn);
       this.urbanPlannerFn.addEnvironment('USE_STEP_FUNCTIONS', 'true');
       this.urbanPlannerStateMachine.grantStartSyncExecution(this.urbanPlannerFn);
+
+      // Grant Location Service permissions for pin-based routing
+      this.urbanPlannerFn.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['geo:CalculateRoute'],
+          resources: [routeCalculator.attrArn],
+        })
+      );
 
       // Output State Machine ARN
       new cdk.CfnOutput(this, 'UrbanPlannerStateMachineArn', {
