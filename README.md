@@ -82,64 +82,8 @@ ReAct pattern (Reasoning + Acting) for all agent decisions. Full transparency wi
 
 ## Five-Zone Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              VIGIA SYSTEM                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │ ZONE 1: WEB EDGE (Client-Side Intelligence)                         │  │
-│  ├──────────────────────────────────────────────────────────────────────┤  │
-│  │  Next.js UI   │◄────────┤   Dedicated Web Worker          │  │
-│  │  (React 19)   │         │   - YOLOv26-FP32 ONNX (6 MB)     │  │
-│  │               │         │   - 60ms inference              │  │
-│  │  IndexedDB    │         │ 
-│  │  (Local VFS)  │         │   - Privacy controls (blur)     │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                          │ HTTPS (Signed Telemetry)                        │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │ ZONE 2: INGESTION FUNNEL (Validation Gateway)                       │  │
-│  ├──────────────────────────────────────────────────────────────────────┤  │
-│  │  API Gateway  →  Validator Lambda  →  DynamoDB (HazardsTable)       │  │
-│  │  (REST API)      - Schema validation    - Geohash PK                │  │
-│  │                  - Signature check      - Timestamp SK               │  │
-│  │                  - Deduplication        - DynamoDB Streams           │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                          │ DynamoDB Stream Event                           │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │ ZONE 3: INTELLIGENCE CORE (Agentic Reasoning)                       │  │
-│  ├──────────────────────────────────────────────────────────────────────┤  │
-│  │  Orchestrator Lambda  →  Bedrock Agent (Nova Lite)                  │  │
-│  │  - Stream trigger        - 4 Action Groups, 8 Tools                 │  │
-│  │  - Cooldown check        - ReAct pattern reasoning                  │  │
-│  │                          - Verification scoring                      │  │
-│  │                                                                      │  │
-│  │  Step Functions Express  →  3 Micro-Lambdas (Parallel)              │  │
-│  │  - ASL workflow          - Bezier path generation                   │  │
-│  │  - 206ms execution       - Cost calculation                         │  │
-│  │                          - Zone compliance                           │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                          │ Verification Result                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │ ZONE 4: TRUST LAYER (Tamper-Evident Ledger)                         │  │
-│  ├──────────────────────────────────────────────────────────────────────┤  │
-│  │  Ledger Lambda  →  DynamoDB (LedgerTable)                            │  │
-│  │  - SHA-256 hash chain    - Append-only writes                       │  │
-│  │  - previousHash link     - Stream-based validation                  │  │
-│  │  - Integrity validation  - 7-day retention                          │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                          │ Verified Hazards                                │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │ ZONE 5: VISUALIZATION (Spatial Intelligence)                        │  │
-│  ├──────────────────────────────────────────────────────────────────────┤  │
-│  │  Location Service  →  MapLibre GL JS                                 │  │
-│  │  - Route Calculator      - Real-time rendering                      │  │
-│  │  - Geofence Collection   - Hazard markers                           │  │
-│  │  - Esri road data        - Route polylines                          │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+<img width="1386" height="482" alt="image" src="https://github.com/user-attachments/assets/39ed8d90-84b6-4731-a30d-1c04ddade016" />
+
 
 **Data Flow**: Browser → API Gateway → Validator → DynamoDB → Orchestrator → Bedrock Agent → Ledger → UI
 
@@ -200,6 +144,7 @@ Event-driven architecture with change data capture. New hazards automatically tr
 - MaintenanceLogistics: `prioritize_repair_queue`, `estimate_repair_cost`
 - UrbanPlanner: `find_optimal_path` (invokes Step Functions)
 
+<img width="1280" height="517" alt="image" src="https://github.com/user-attachments/assets/7a8d4202-cf81-4445-b62f-52df4343c936" />
 
 ---
 
