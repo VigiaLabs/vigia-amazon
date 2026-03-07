@@ -146,14 +146,9 @@ export async function enforceAgentRateLimit(req: NextRequest): Promise<RateLimit
 
   const tableName = getRateLimitTableName();
   if (!tableName) {
-    if (process.env.NODE_ENV === 'production') {
-      // Do not silently fall back in production; it is bypassable under serverless scaling.
-      return {
-        allowed: false,
-        reason: 'Rate limiting is not configured on the server. Please set AGENT_RATE_LIMIT_TABLE_NAME.',
-        retryAfterMs: 10 * 1000,
-      };
-    }
+    // DynamoDB table not configured — fall back to in-memory rate limiting.
+    // In-memory is per-instance so not perfect under serverless scaling, but
+    // it's far better than rejecting 100% of requests.
     return checkMemoryRateLimit(ip);
   }
 
