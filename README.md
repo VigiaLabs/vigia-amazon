@@ -516,7 +516,6 @@ Replace DynamoDB ledger with Ethereum L2, smart contracts for DePIN rewards, tok
 ---
 
 ## Contributors
-- [ben-biju](https://github.com/ben-biju)
 <a href="https://github.com/BlueWaves-afk/vigia-amazon/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=BlueWaves-afk/vigia-amazon" />
 </a>
