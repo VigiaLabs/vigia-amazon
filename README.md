@@ -67,7 +67,8 @@ YOLOv26-FP32 ONNX model runs in a browser Web Worker (6 MB model, ~60ms inferenc
 
 ### 3. Cost-Optimized AI
 Amazon Nova Lite ($0.06/1M tokens) instead of Claude 3.5 Sonnet ($3.00/1M tokens). 50x cost reduction. Aggressive caching and deduplication. Total AI cost: $1.20 for entire voting phase.
-![output](https://github.com/user-attachments/assets/cc195613-481e-454a-b387-aa53d0fb69bf)
+![compressed](https://github.com/user-attachments/assets/d0b2213b-8172-49f3-a585-34e626e3a6df)
+
 
 ### 4. Local-First Operations
 Diff computation, scenario branching, and forensic analysis run in browser (IndexedDB + Web Workers). Zero server costs for analysis. Data sent to cloud only on explicit user action.
@@ -77,7 +78,8 @@ ECDSA P-256 signatures on all telemetry. Server-side signature verification. Tam
 
 ### 6. Explainable AI
 ReAct pattern (Reasoning + Acting) for all agent decisions. Full transparency with thought/action/observation logs. Streaming traces via Server-Sent Events (SSE). Users see exactly how AI reached conclusions.
-![output](https://github.com/user-attachments/assets/ce92d29e-d1de-48fc-b9d9-f466512ba18e)
+![compressed](https://github.com/user-attachments/assets/7e4ce3bf-3ffa-43cd-82b1-f7c145df8cc5)
+
 
 ---
 
