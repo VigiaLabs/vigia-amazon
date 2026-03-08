@@ -76,6 +76,7 @@ ECDSA P-256 signatures on all telemetry. Server-side signature verification. Tam
 
 ### 6. Explainable AI
 ReAct pattern (Reasoning + Acting) for all agent decisions. Full transparency with thought/action/observation logs. Streaming traces via Server-Sent Events (SSE). Users see exactly how AI reached conclusions.
+![output](https://github.com/user-attachments/assets/ce92d29e-d1de-48fc-b9d9-f466512ba18e)
 
 ---
 
