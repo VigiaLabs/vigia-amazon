@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { SettingsProvider } from './components/SettingsContext';
 import { ThemeGate } from './components/ThemeGate';
+import { SolanaProvider } from './providers/SolanaProvider';
 
 export const metadata: Metadata = {
   title: 'VIGIA — Sentient Road Infrastructure',
@@ -51,11 +52,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         transition: 'background 0.18s ease, color 0.18s ease',
       }}>
         <SettingsProvider>
+          <SolanaProvider>
           <ThemeGate>
             <div className="vigia-root" style={{ height: '100%', overflow: 'hidden' }}>
               {children}
             </div>
           </ThemeGate>
+          </SolanaProvider>
         </SettingsProvider>
       </body>
     </html>

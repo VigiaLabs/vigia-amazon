@@ -70,19 +70,6 @@ export class VigiaStack extends cdk.Stack {
       }));
     }
 
-    // Add claim-signature endpoint to innovation API (BME model)
-    if (intelligenceWithHazardsStack.claimSignatureFn) {
-      const claimSig = innovationStack.api.root.addResource('claim-signature', {
-        defaultCorsPreflightOptions: {
-          allowOrigins: apigateway.Cors.ALL_ORIGINS,
-          allowMethods: ['POST', 'OPTIONS'],
-          allowHeaders: ['Content-Type'],
-          maxAge: cdk.Duration.days(1),
-        },
-      });
-      claimSig.addMethod('POST', new apigateway.LambdaIntegration(intelligenceWithHazardsStack.claimSignatureFn));
-    }
-
     // Add rewards-balance endpoint to innovation API (read-only balance check)
     if (intelligenceWithHazardsStack.rewardsBalanceFn) {
       const rewardsBal = innovationStack.api.root.addResource('rewards-balance', {

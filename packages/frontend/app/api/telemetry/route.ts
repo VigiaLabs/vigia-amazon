@@ -9,8 +9,13 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    if (!body.driverWalletAddress) {
-      return NextResponse.json({ error: 'Missing wallet address' }, { status: 400 });
+    if (!body.publicKey && !body.driverWalletAddress) {
+      return NextResponse.json({ error: 'Missing publicKey' }, { status: 400 });
+    }
+
+    // Ensure publicKey is set (new Ed25519 flow uses publicKey, legacy uses driverWalletAddress)
+    if (!body.publicKey && body.driverWalletAddress) {
+      body.publicKey = body.driverWalletAddress;
     }
 
     const upstream = await fetch(`${TELEMETRY_API}/telemetry`, {

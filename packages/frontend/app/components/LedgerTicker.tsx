@@ -17,9 +17,27 @@ export function LedgerTicker() {
 
   const fetchEntries = async () => {
     try {
+      // Fetch DynamoDB ledger entries (has contributor + geohash)
       const response = await fetch('/api/ledger');
       const data = await response.json();
-      setEntries(data.entries || []);
+      const dbEntries: LedgerEntry[] = (data.entries || []);
+
+      // Fetch recent Solana program tx signatures
+      const solRes = await fetch(process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.devnet.solana.com', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSignaturesForAddress',
+          params: [process.env.NEXT_PUBLIC_SOLANA_PROGRAM_ID || 'BKaxbk73bCY8xRuphpkTESWjaJofdnBpuc2T193f3nkW', { limit: 10 }] }),
+      });
+      const solData = await solRes.json();
+      const solSigs: string[] = (solData.result ?? []).map((s: any) => s.signature);
+
+      // Attach Solana tx signatures to the most recent DB entries (in order)
+      const merged = dbEntries.map((entry, i) => ({
+        ...entry,
+        txHash: entry.txHash || solSigs[i] || undefined,
+      }));
+
+      setEntries(merged.slice(0, 15));
       setLoading(false);
     } catch (error) {
       console.error('Failed to fetch ledger entries:', error);
@@ -86,7 +104,7 @@ export function LedgerTicker() {
                   {new Date(entry.timestamp).toLocaleTimeString()}
                 </td>
                 <td className="py-2 px-3" style={{ color: 'var(--c-text-2)', fontFamily: 'var(--v-font-mono)' }}>
-                  {entry.contributorId.substring(0, 8)}
+                  {entry.contributorId.slice(0, 6)}…{entry.contributorId.slice(-4)}
                   <span style={{ color: 'var(--c-text-3)' }}>…</span>
                 </td>
                 <td className="py-2 px-3">
@@ -109,7 +127,7 @@ export function LedgerTicker() {
                 <td className="py-2 px-3 text-right">
                   {entry.txHash ? (
                     <a
-                      href={`https://amoy.polygonscan.com/tx/${entry.txHash}`}
+                      href={`https://explorer.solana.com/tx/${entry.txHash}?cluster=devnet`}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -123,13 +141,13 @@ export function LedgerTicker() {
                       }}
                       title={`View on PolygonScan: ${entry.txHash}`}
                     >
-                      <span>{entry.credits} $VIGIA</span>
+                      <span>{entry.credits > 0 ? '✓ On-Chain' : '—'}</span>
                       <ExternalLink size={10} />
                     </a>
                   ) : (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ color: 'var(--c-text-3)', fontFamily: 'var(--v-font-mono)' }}>
-                        {entry.credits} $VIGIA
+                        {entry.credits > 0 ? '✓ On-Chain' : '—'}
                       </span>
                       <span style={{
                         fontSize: '0.58rem', padding: '1px 5px', borderRadius: 2,

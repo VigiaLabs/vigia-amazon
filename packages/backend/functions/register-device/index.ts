@@ -17,8 +17,8 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   try {
     const { device_address } = JSON.parse(event.body || '{}');
 
-    // Validate Ethereum address format
-    if (!device_address || !/^0x[0-9a-fA-F]{40}$/.test(device_address)) {
+    // Validate Solana public key format (base58, 32-44 chars)
+    if (!device_address || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(device_address)) {
       return { statusCode: 400, headers: { ...CORS, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: 'INVALID_ADDRESS' }) };
     }
