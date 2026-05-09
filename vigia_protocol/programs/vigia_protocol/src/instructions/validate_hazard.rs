@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, MintTo};
+use anchor_spl::{associated_token::get_associated_token_address, token::{self, Token, MintTo}};
 use solana_program::{instruction::{Instruction, AccountMeta}, program::invoke};
 
 use crate::constants::*;
@@ -7,7 +7,7 @@ use crate::error::VigiaError;
 use crate::state::{HazardRegistry, NodeStake, ValidationLeaf, status};
 
 /// The global concurrent Merkle tree pubkey — pre-initialized by admin.
-pub const GLOBAL_VALIDATION_TREE: &str = "HUWg7PsuqKtDxUe411mXNssfE2BSpq4ajao4GUab13LZ";
+pub const GLOBAL_VALIDATION_TREE: Pubkey = pubkey!("HUWg7PsuqKtDxUe411mXNssfE2BSpq4ajao4GUab13LZ");
 
 #[derive(Accounts)]
 #[instruction(h3_index: u64, epoch_day: u32)]
@@ -34,7 +34,13 @@ pub struct ValidateHazard<'info> {
 
     /// The validator's $VIGIA Associated Token Account (receives minted tokens).
     /// CHECK: validated by token::mint_to CPI.
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = validator_ata.key() == get_associated_token_address(
+            &validator.key(),
+            &vigia_mint.key(),
+        ) @ VigiaError::InvalidAssociatedTokenAccount
+    )]
     pub validator_ata: UncheckedAccount<'info>,
 
     /// The $VIGIA SPL Token mint.
@@ -51,20 +57,22 @@ pub struct ValidateHazard<'info> {
     /// CHECK: validated by key constraint.
     #[account(
         mut,
-        constraint = global_tree.key().to_string() == GLOBAL_VALIDATION_TREE @ VigiaError::InvalidMerkleTree
+        constraint = global_tree.key() == GLOBAL_VALIDATION_TREE @ VigiaError::InvalidMerkleTree
     )]
     pub global_tree: UncheckedAccount<'info>,
 
     #[account(
         mut,
-        constraint = authority.key().to_string() == VIGIA_AUTHORITY @ VigiaError::Unauthorized
+        constraint = authority.key() == VIGIA_AUTHORITY @ VigiaError::Unauthorized
     )]
     pub authority: Signer<'info>,
 
     /// CHECK: SPL Account Compression program.
+    #[account(address = spl_account_compression::id() @ VigiaError::InvalidCompressionProgram)]
     pub compression_program: UncheckedAccount<'info>,
 
     /// CHECK: SPL Noop program for Merkle tree logging.
+    #[account(address = spl_noop::id() @ VigiaError::InvalidNoopProgram)]
     pub noop_program: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
@@ -120,7 +128,6 @@ pub fn handler(
     invoke(
         &append_ix,
         &[
-            ctx.accounts.compression_program.to_account_info(),
             ctx.accounts.global_tree.to_account_info(),
             ctx.accounts.authority.to_account_info(),
             ctx.accounts.noop_program.to_account_info(),

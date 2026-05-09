@@ -105,13 +105,14 @@ export function buildValidateHazardIx(p: {
 }
 
 export function buildSlashNodeIx(p: {
-  nodeStakePDA: PublicKey; node: PublicKey; authority: PublicKey; data: Buffer;
+  nodeStakePDA: PublicKey; node: PublicKey; vault: PublicKey; authority: PublicKey; data: Buffer;
 }): TransactionInstruction {
   return new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
       { pubkey: p.nodeStakePDA,           isSigner: false, isWritable: true  },
       { pubkey: p.node,                   isSigner: false, isWritable: false },
+      { pubkey: p.vault,                  isSigner: false, isWritable: true  },
       { pubkey: SystemProgram.programId,  isSigner: false, isWritable: false },
       { pubkey: p.authority,              isSigner: true,  isWritable: true  },
       { pubkey: SystemProgram.programId,  isSigner: false, isWritable: false },

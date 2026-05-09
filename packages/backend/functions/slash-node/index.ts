@@ -3,7 +3,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash } from 'crypto';
 import { getAuthority, getConnection } from '../../src/solana/authority';
-import { deriveNodeStakePDA } from '../../src/solana/pda';
+import { deriveNodeStakePDA, deriveVaultPDA } from '../../src/solana/pda';
 import { buildSlashNodeData, buildSlashNodeIx } from '../../src/solana/instructions';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -17,12 +17,13 @@ export const handler = async (event: { walletAddress: string; hazardId: string; 
   const connection = getConnection();
   const node = new PublicKey(walletAddress);
   const [nodeStakePDA] = deriveNodeStakePDA(node);
+  const [vaultPDA] = deriveVaultPDA();
 
   // bytes32 representation of hazardId (SHA-256 hash, truncated to 32 bytes)
   const hazardIdBytes = createHash('sha256').update(hazardId).digest();
 
   const data = buildSlashNodeData(hazardIdBytes, reason);
-  const ix = buildSlashNodeIx({ nodeStakePDA, node, authority: authority.publicKey, data });
+  const ix = buildSlashNodeIx({ nodeStakePDA, node, vault: vaultPDA, authority: authority.publicKey, data });
 
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
   const messageV0 = new TransactionMessage({

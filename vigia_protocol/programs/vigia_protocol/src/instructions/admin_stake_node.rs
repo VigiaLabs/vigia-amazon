@@ -27,7 +27,7 @@ pub struct AdminStakeNode<'info> {
     /// Authority pays for the stake.
     #[account(
         mut,
-        constraint = authority.key().to_string() == VIGIA_AUTHORITY @ VigiaError::Unauthorized
+        constraint = authority.key() == VIGIA_AUTHORITY @ VigiaError::Unauthorized
     )]
     pub authority: Signer<'info>,
 
