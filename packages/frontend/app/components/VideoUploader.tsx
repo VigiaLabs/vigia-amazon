@@ -314,7 +314,8 @@ export function VideoUploader({
           confidence: detection.confidence,
           timestamp: detection.timestamp,
           signature,
-          driverWalletAddress: deviceAddress,
+          publicKey: deviceAddress,
+          driverWalletAddress: (window as any).__vigiaRewardAddress || deviceAddress,
           frame_base64,
         }),
       });

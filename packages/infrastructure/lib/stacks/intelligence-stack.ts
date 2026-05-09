@@ -37,7 +37,6 @@ export class IntelligenceStack extends Construct {
   public readonly geofenceCollection?: location.CfnGeofenceCollection;
   public readonly bedrockAgentConfig?: BedrockAgentConfig;
   public readonly verifyHazardSyncFn?: lambdaNodejs.NodejsFunction;
-  public readonly claimSignatureFn?: lambdaNodejs.NodejsFunction;
   public readonly rewardsBalanceFn?: lambdaNodejs.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: IntelligenceStackProps) {
@@ -122,6 +121,10 @@ export class IntelligenceStack extends Construct {
           FRAMES_BUCKET_NAME: props.framesBucket?.bucketName ?? '',
           BEDROCK_AGENT_ID: process.env.BEDROCK_AGENT_ID || 'placeholder',
           BEDROCK_AGENT_ALIAS_ID: process.env.BEDROCK_AGENT_ALIAS_ID || 'placeholder',
+          SOLANA_RPC_URL: 'https://api.devnet.solana.com',
+          SOLANA_PROGRAM_ID: 'BKaxbk73bCY8xRuphpkTESWjaJofdnBpuc2T193f3nkW',
+          SOLANA_AUTHORITY_SECRET_ARN: 'arn:aws:secretsmanager:us-east-1:203800220566:secret:vigia-solana-authority-ro47l5',
+          GLOBAL_VALIDATION_TREE: 'HUWg7PsuqKtDxUe411mXNssfE2BSpq4ajao4GUab13LZ',
         },
       });
 
@@ -137,6 +140,10 @@ export class IntelligenceStack extends Construct {
         actions: ['bedrock:InvokeAgent', 'bedrock:InvokeModel'],
         resources: ['*'],
       }));
+      orchestratorFn.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: ['arn:aws:secretsmanager:us-east-1:203800220566:secret:vigia-solana-authority-ro47l5'],
+      }));
 
       // Slash-node Lambda (invoked async by orchestrator on spoof detection)
       const slashNodeFn = new lambdaNodejs.NodejsFunction(this, 'SlashNodeFunction', {
@@ -147,17 +154,15 @@ export class IntelligenceStack extends Construct {
         memorySize: 256,
         bundling: { externalModules: ['@aws-sdk/*'] },
         environment: {
-          KMS_KEY_ID: ssm.StringParameter.valueForStringParameter(this, '/vigia/KMS_KEY_ID'),
-          VIGIA_CONTRACT_ADDRESS: ssm.StringParameter.valueForStringParameter(this, '/vigia/VIGIA_CONTRACT_ADDRESS'),
-          POLYGON_AMOY_RPC_URL: 'https://rpc-amoy.polygon.technology/',
-          CHAIN_ID: '80002',
-          DEVICE_REGISTRY_TABLE: 'VigiaDeviceRegistry',
-          RELAYER_PRIVATE_KEY: ssm.StringParameter.valueForStringParameter(this, '/vigia/RELAYER_PRIVATE_KEY'),
+          SOLANA_RPC_URL: 'https://api.devnet.solana.com',
+          SOLANA_PROGRAM_ID: 'BKaxbk73bCY8xRuphpkTESWjaJofdnBpuc2T193f3nkW',
+          SOLANA_AUTHORITY_SECRET_ARN: 'arn:aws:secretsmanager:us-east-1:203800220566:secret:vigia-solana-authority-ro47l5',
+          DEVICE_REGISTRY_TABLE: props.deviceRegistryTable?.tableName ?? 'VigiaDeviceRegistry',
         },
       });
       slashNodeFn.addToRolePolicy(new iam.PolicyStatement({
-        actions: ['kms:Sign', 'kms:GetPublicKey'],
-        resources: ['arn:aws:kms:us-east-1:203800220566:key/ad6343de-0e67-4502-a230-db2a6210e6a7'],
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: ['arn:aws:secretsmanager:us-east-1:203800220566:secret:vigia-solana-authority-ro47l5'],
       }));
       slashNodeFn.addToRolePolicy(new iam.PolicyStatement({
         actions: ['dynamodb:UpdateItem'],
@@ -269,28 +274,6 @@ export class IntelligenceStack extends Construct {
           ],
         })
       );
-
-      // BME Claim Signature Lambda
-      this.claimSignatureFn = new lambdaNodejs.NodejsFunction(this, 'ClaimSignatureFunction', {
-        entry: path.join(__dirname, '../../../backend/functions/claim-signature/index.ts'),
-        handler: 'handler',
-        runtime: lambda.Runtime.NODEJS_20_X,
-        timeout: cdk.Duration.seconds(15),
-        memorySize: 256,
-        bundling: { externalModules: ['@aws-sdk/*'] },
-        environment: {
-          REWARDS_LEDGER_TABLE_NAME: this.rewardsLedgerTable.tableName,
-          KMS_KEY_ID: ssm.StringParameter.valueForStringParameter(this, '/vigia/KMS_KEY_ID'),
-          CHAIN_ID: '80002',
-        },
-      });
-      this.rewardsLedgerTable.grantReadWriteData(this.claimSignatureFn);
-      this.claimSignatureFn.addToRolePolicy(new iam.PolicyStatement({
-        actions: ['kms:Sign', 'kms:GetPublicKey'],
-        resources: [
-          'arn:aws:kms:us-east-1:203800220566:key/ad6343de-0e67-4502-a230-db2a6210e6a7',
-        ],
-      }));
 
       // BME Rewards Balance Lambda (read-only, no nonce consumption)
       this.rewardsBalanceFn = new lambdaNodejs.NodejsFunction(this, 'RewardsBalanceFunction', {

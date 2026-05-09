@@ -1,7 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
-import { ethers } from 'ethers';
+import bs58 from 'bs58';
 
 const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE = process.env.REWARDS_LEDGER_TABLE_NAME!;
@@ -19,14 +19,19 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   if (!wallet) return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'wallet_address required' }) };
 
   try {
-    const checksummed = ethers.getAddress(wallet);
-    const res = await dynamo.send(new GetCommand({ TableName: TABLE, Key: { wallet_address: checksummed } }));
+    // Validate it's a valid base58 Solana pubkey (32 bytes decoded)
+    const decoded = bs58.decode(wallet);
+    if (decoded.length !== 32) {
+      return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Invalid Solana public key' }) };
+    }
+
+    const res = await dynamo.send(new GetCommand({ TableName: TABLE, Key: { wallet_address: wallet } }));
     const item = res.Item ?? {};
     return {
       statusCode: 200,
       headers: { ...cors, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        wallet_address: checksummed,
+        wallet_address: wallet,
         pending_balance: item.pending_balance?.toString() ?? '0',
         total_earned:    item.total_earned?.toString()    ?? '0',
         total_claimed:   item.total_claimed?.toString()   ?? '0',

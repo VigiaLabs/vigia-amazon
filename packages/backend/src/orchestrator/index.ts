@@ -6,6 +6,7 @@ import { BedrockAgentRuntimeClient, InvokeAgentCommand } from '@aws-sdk/client-b
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { createHash, randomUUID } from 'crypto';
+import { submitHazardToChain } from '../solana/submit-hazard';
 
 const dynamodb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const bedrock  = new BedrockRuntimeClient({ region: 'us-east-1' });
@@ -162,6 +163,8 @@ export const handler = async (event: any) => {
     const confidence          = parseFloat(img.confidence.N!);
     const driverWalletAddress = img.driverWalletAddress?.S ?? '';
     const s3_key              = img.s3_key?.S ?? null;
+    const lat                 = parseFloat(img.lat?.N ?? '0');
+    const lon                 = parseFloat(img.lon?.N ?? '0');
     const hazardId            = `${geohash}#${timestamp}`;
     const cooldownKey         = hazardId; // per-hazard dedup, not per-type
 
@@ -288,6 +291,26 @@ export const handler = async (event: any) => {
         TableName: LEDGER_TABLE,
         Item: { ...entry, currentHash: createHash('sha256').update(JSON.stringify(entry)).digest('hex') },
       }));
+
+      // ── Submit to Solana (non-blocking — don't crash pipeline if chain is down) ──
+      if (driverWalletAddress) {
+        const { latLngToCell } = await import('h3-js');
+        const h3Index = BigInt('0x' + latLngToCell(lat, lon, 9));
+        const epochDay = Math.floor(Date.now() / 1000 / 86400);
+        const sigHash = createHash('sha256').update(hazardId).digest();
+        try {
+          const solResult = await submitHazardToChain({
+            h3Index, epochDay,
+            discovererPubkey: driverWalletAddress,
+            vlmConfidence: vlmConfidence,
+            onnxConfidence: confidence,
+            signatureHash: sigHash,
+          });
+          console.log(`[Orch] Solana ${solResult.type} tx=${solResult.signature}`);
+        } catch (e: any) {
+          console.error(`[Orch] Solana submit failed:`, e.message);
+        }
+      }
     }
 
     await dynamodb.send(new PutCommand({

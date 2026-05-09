@@ -5,6 +5,8 @@ import { VideoUploader } from './VideoUploader';
 import { LiveMap } from './LiveMap';
 import { HazardVerificationPanel } from './HazardVerificationPanel';
 import { RewardsWidget } from './RewardsWidget';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useDeviceWallet } from '../hooks/useDeviceWallet';
 import { Skeleton } from './Skeleton';
 
@@ -57,7 +59,20 @@ function DetectionModeSkeleton() {
 }
 
 export function DetectionModeView() {
+  const wallet = useWallet();
+  // Phantom wallet = identity (receives bounties, shown in UI)
+  // Device keypair = silent Ed25519 signer (no popups for automated telemetry)
   const device = useDeviceWallet();
+  // Use device keypair address for signing/verification — it's registered in DeviceRegistry
+  const deviceAddress = device.address;
+  const signPayload = device.signPayload;
+
+  // Set the reward address globally so VideoUploader sends bounties to Phantom
+  useEffect(() => {
+    if (wallet.publicKey) {
+      (window as any).__vigiaRewardAddress = wallet.publicKey.toBase58();
+    }
+  }, [wallet.publicKey]);
   const [leftWidth, setLeftWidth] = useState(20); // percentage for verification panel
   const [centerWidth, setCenterWidth] = useState(45); // percentage for detection node
   const containerRef = useRef<HTMLDivElement>(null);
@@ -143,10 +158,10 @@ export function DetectionModeView() {
         margin: 8,
       }}>
         <div style={{ flex: 1, overflow: 'hidden', borderBottom: `1px solid ${C.border}` }}>
-          <HazardVerificationPanel deviceAddress={device.address} signPayload={device.signPayload} />
+          <HazardVerificationPanel deviceAddress={deviceAddress} signPayload={signPayload} />
         </div>
         <div style={{ padding: '8px', flexShrink: 0 }}>
-          <RewardsWidget walletAddress={device.address} />
+          <RewardsWidget />
         </div>
       </div>
 
@@ -214,19 +229,17 @@ export function DetectionModeView() {
           }}>
             ONNX v26 · 5 FPS
           </span>
-          {/* Edge Node Authentication Badge */}
+          {/* Solana Wallet Badge */}
           <span style={{
             marginLeft: 'auto',
             fontSize: '0.6rem',
             fontFamily: "var(--v-font-mono)",
-            color: device.status === 'ready' ? 'var(--c-green)' : device.status === 'error' ? 'var(--c-red)' : C.textMut,
+            color: wallet.connected ? 'var(--c-green)' : C.textMut,
             display: 'flex',
             alignItems: 'center',
             gap: 4,
           }}>
-            {device.status === 'ready'  && <>Edge Node Authenticated &nbsp;<strong>{device.address.slice(0, 6)}...</strong></>}
-            {device.status === 'loading' && <>Registering node...</>}
-            {device.status === 'error'   && <>Node offline</>}
+            {wallet.connected ? <>🟢 {deviceAddress.slice(0, 6)}...{deviceAddress.slice(-4)}</> : <WalletMultiButton style={{ fontSize: '0.6rem', height: 24, padding: '0 10px' }} />}
           </span>
         </div>
         
@@ -236,7 +249,7 @@ export function DetectionModeView() {
           overflow: 'auto',
           padding: 16,
         }}>
-          <VideoUploader deviceAddress={device.address} signPayload={device.signPayload} />
+          <VideoUploader deviceAddress={deviceAddress} signPayload={signPayload} />
         </div>
       </div>
 

@@ -44,10 +44,9 @@ export class VFSManager {
   }
 
   private async computeHash(data: string): Promise<string> {
-    // Browser-compatible hash (using SubtleCrypto)
     const encoder = new TextEncoder();
     const dataBuffer = encoder.encode(data);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+    const hashBuffer = await (crypto.subtle.digest as (alg: string, data: Uint8Array) => Promise<ArrayBuffer>)('SHA-256', dataBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }

@@ -6,7 +6,7 @@ import { EnterpriseAuthModal, loadSession, saveSession, clearSession } from './E
 
 const MONO = 'var(--v-font-mono)';
 const SANS = 'var(--v-font-ui)';
-const AMOY_SCAN = 'https://amoy.polygonscan.com/tx/';
+const SOLANA_EXPLORER_TX = 'https://explorer.solana.com/tx/';
 const ENTERPRISE_API = process.env.NEXT_PUBLIC_ENTERPRISE_API_URL ?? '';
 
 interface BurnRecord { date: string; vga: number; credits: number; tx: string; }
@@ -401,7 +401,7 @@ export function EnterpriseDashboard() {
         ) : burnHistory.map((r, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', padding: '9px 16px', borderTop: '1px solid var(--v-border-subtle)', alignItems: 'center' }}>
             <span style={{ fontSize: '0.62rem', fontFamily: MONO, color: 'var(--c-text-2)' }}>{r.date}</span>
-            <a href={`${AMOY_SCAN}${r.tx}`} target="_blank" rel="noreferrer"
+            <a href={`${SOLANA_EXPLORER_TX}${r.tx}?cluster=devnet`} target="_blank" rel="noreferrer"
               style={{ fontSize: '0.62rem', fontFamily: MONO, color: '#6366f1', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
               {r.tx.slice(0, 10)}…{r.tx.slice(-6)} <ExternalLink size={9} />
             </a>

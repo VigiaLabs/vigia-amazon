@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { readTotalSupply } from '../lib/contract';
+import { readVaultBalance } from '../lib/contract';
 import { API_URL, INNOVATION_API } from '../lib/constants';
 import { Skeleton } from './Skeleton';
 
@@ -74,7 +74,7 @@ export function GlobalNetworkExplorer() {
   const fetchData = useCallback(async () => {
     try {
       const [supplyRes, hazardRes, statsRes] = await Promise.allSettled([
-        readTotalSupply(),
+        readVaultBalance().then(v => BigInt(Math.round(v * 1e9))).catch(() => BigInt(0)),
         fetch(`/api/hazards?limit=20`).then(r => r.json()),
         fetch(`${process.env.NEXT_PUBLIC_ENTERPRISE_API_URL}/enterprise/stats`).then(r => r.json()),
       ]);

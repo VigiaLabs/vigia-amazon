@@ -114,8 +114,7 @@ export function HazardVerificationPanel({ onHazardDetected, deviceAddress, signP
       }
       try {
         // Primary: check trace via backend API Gateway directly
-        const apiUrl = process.env.NEXT_PUBLIC_TELEMETRY_API_URL || process.env.NEXT_PUBLIC_API_URL || '';
-        const res = await fetch(`${apiUrl}/traces/${encodeURIComponent(hazardId)}`);
+        const res = await fetch(`/api/traces/${encodeURIComponent(hazardId)}`);
         const data = await res.json();
         const trace = data.trace ?? (Array.isArray(data) ? data[0] : null) ?? data;
         if (trace?.verdict) {
