@@ -139,7 +139,7 @@ export function LedgerTicker() {
                         fontFamily: 'var(--v-font-mono)',
                         textDecoration: 'none',
                       }}
-                      title={`View on PolygonScan: ${entry.txHash}`}
+                      title={`View on Solana Explorer: ${entry.txHash}`}
                     >
                       <span>{entry.credits > 0 ? '✓ On-Chain' : '—'}</span>
                       <ExternalLink size={10} />
