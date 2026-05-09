@@ -14,12 +14,6 @@ pub enum VigiaError {
     HazardNotVerified,
     #[msg("Invalid global Merkle tree account")]
     InvalidMerkleTree,
-    #[msg("Invalid SPL Account Compression program")]
-    InvalidCompressionProgram,
-    #[msg("Invalid SPL Noop program")]
-    InvalidNoopProgram,
-    #[msg("Invalid associated token account")]
-    InvalidAssociatedTokenAccount,
     #[msg("Arithmetic overflow")]
     Overflow,
 }

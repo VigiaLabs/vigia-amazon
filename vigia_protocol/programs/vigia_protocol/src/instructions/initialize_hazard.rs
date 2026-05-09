@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::get_associated_token_address, token::{self, Token, MintTo}};
+use anchor_spl::token::{self, Token, MintTo};
 
 use crate::constants::*;
 use crate::error::VigiaError;
@@ -31,13 +31,7 @@ pub struct InitializeHazard<'info> {
 
     /// The discoverer's $VIGIA Associated Token Account (receives minted tokens).
     /// CHECK: validated by token::mint_to CPI.
-    #[account(
-        mut,
-        constraint = discoverer_ata.key() == get_associated_token_address(
-            &discoverer.key(),
-            &vigia_mint.key(),
-        ) @ VigiaError::InvalidAssociatedTokenAccount
-    )]
+    #[account(mut)]
     pub discoverer_ata: UncheckedAccount<'info>,
 
     /// The $VIGIA SPL Token mint.
@@ -53,7 +47,7 @@ pub struct InitializeHazard<'info> {
     /// AWS Lambda keypair — the sole authorized caller.
     #[account(
         mut,
-        constraint = authority.key() == VIGIA_AUTHORITY @ VigiaError::Unauthorized
+        constraint = authority.key().to_string() == VIGIA_AUTHORITY @ VigiaError::Unauthorized
     )]
     pub authority: Signer<'info>,
 

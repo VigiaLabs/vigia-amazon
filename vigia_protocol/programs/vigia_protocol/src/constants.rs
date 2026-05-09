@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 /// AWS Lambda authority — the only pubkey allowed to call initialize_hazard,
 /// validate_hazard, and slash_node. Hardcoded so no runtime config can override it.
-pub const VIGIA_AUTHORITY: Pubkey = pubkey!("7PTUbMJMWRwAixmkez2yBpsjovyAECtcXQHVYzAi8jf1");
+pub const VIGIA_AUTHORITY: &str = "7PTUbMJMWRwAixmkez2yBpsjovyAECtcXQHVYzAi8jf1";
 
 /// Mint authority PDA seed — this PDA is set as the $VIGIA SPL token's mint authority.
 pub const MINT_AUTHORITY_SEED: &[u8] = b"mint_authority";
