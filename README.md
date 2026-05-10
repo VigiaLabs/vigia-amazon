@@ -100,6 +100,8 @@ $VIGIA token exchange, Data Credit balance, API usage metrics, burn history. Mun
 
 ## Market & Unit Economics
 
+> 📄 **Full breakdown**: [docs/costanalysis.md](docs/costanalysis.md) — detailed per-service math, revenue projections by market, sensitivity analysis, and investor takeaways.
+
 ### Target Market
 
 | Segment | TAM | VIGIA Value Prop |
@@ -140,6 +142,8 @@ $VIGIA token exchange, Data Credit balance, API usage metrics, burn history. Mun
 
 ## Architecture
 
+> 📄 **Full infrastructure reference**: [docs/infrastructure.md](docs/infrastructure.md) — all 27 Lambdas, 15 DynamoDB tables, 4 API Gateways, IAM roles, and deployment instructions.
+
 ### Edge Intelligence
 - **YOLOv26-FP32** ONNX model runs in browser Web Worker (6 MB, zero cloud compute)
 - **Ed25519** cryptographic signing on every payload (device identity)
@@ -154,6 +158,8 @@ $VIGIA token exchange, Data Credit balance, API usage metrics, burn history. Mun
 - **DynamoDB Streams → EventBridge Pipes** — event-driven, INSERT-only filtering
 
 ### On-Chain Settlement (Solana)
+
+> 📄 **Protocol deep-dive**: [docs/solana.md](docs/solana.md) — Anchor program structure, PDA model, state compression, security model, and future roadmap.
 - **Anchor Program** — `BKaxbk73bCY8xRuphpkTESWjaJofdnBpuc2T193f3nkW`
 - **H3 PDA Model** — `["hazard", h3_index, epoch_day]` seeds = protocol-level deduplication
 - **BME Tokenomics** — $VIGIA minted on every verified hazard (uncapped supply, enterprise burn = deflation)
