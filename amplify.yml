@@ -15,7 +15,7 @@ applications:
             # Write ALL Amplify environment variables into .env.production
             # so Next.js SSR / API routes can read them at runtime.
             - |
-              env | grep -E '^(AGENT_RATE_LIMIT_TABLE_NAME|AWS_REGION|AWS_DEFAULT_REGION|NEXT_PUBLIC_)' >> .env.production || true
+              env | grep -E '^(AGENT_RATE_LIMIT_TABLE_NAME|HAZARDS_TABLE_NAME|LEDGER_TABLE_NAME|MAINTENANCE_TABLE_NAME|TRACES_TABLE_NAME|URBAN_PLANNER_FUNCTION_NAME|MAINTENANCE_FUNCTION_NAME|AWS_REGION|AWS_DEFAULT_REGION|NEXT_PUBLIC_)' >> .env.production || true
               echo "--- .env.production ---" && cat .env.production
             - npm run build
       artifacts:
