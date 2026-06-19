@@ -55,6 +55,13 @@ export class VigiaStack extends cdk.Stack {
       framesBucket: ingestionStack.framesbucket,
     });
 
+    // Wire rewards table into Stripe payout Lambda (table name not known at ingestion-stack construct time)
+    ingestionStack.stripePayoutFn.addEnvironment(
+      'REWARDS_LEDGER_TABLE_NAME',
+      intelligenceWithHazardsStack.rewardsLedgerTable.tableName,
+    );
+    intelligenceWithHazardsStack.rewardsLedgerTable.grantReadWriteData(ingestionStack.stripePayoutFn);
+
     // Add verify-hazard-sync endpoint to ingestion API
     if (intelligenceWithHazardsStack.verifyHazardSyncFn) {
       const verifySync = ingestionStack.api.root.addResource('verify-hazard-sync', {

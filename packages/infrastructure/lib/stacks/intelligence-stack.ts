@@ -122,6 +122,7 @@ export class IntelligenceStack extends Construct {
           FRAMES_BUCKET_NAME: props.framesBucket?.bucketName ?? '',
           BEDROCK_AGENT_ID: process.env.BEDROCK_AGENT_ID || 'placeholder',
           BEDROCK_AGENT_ALIAS_ID: process.env.BEDROCK_AGENT_ALIAS_ID || 'placeholder',
+          VLM_SAMPLE_RATE: process.env.VLM_SAMPLE_RATE || '0.02',
           SOLANA_RPC_URL: 'https://api.devnet.solana.com',
           SOLANA_PROGRAM_ID: 'BKaxbk73bCY8xRuphpkTESWjaJofdnBpuc2T193f3nkW',
           SOLANA_AUTHORITY_SECRET_ARN: 'arn:aws:secretsmanager:us-east-1:203800220566:secret:vigia-solana-authority-ro47l5',

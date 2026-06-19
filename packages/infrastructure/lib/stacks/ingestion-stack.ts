@@ -27,6 +27,7 @@ export class IngestionStack extends Construct {
   // ── Other public resources ───────────────────────────────────────────────
   public readonly framesbucket: s3.Bucket;
   public readonly api: apigateway.RestApi;
+  public readonly stripePayoutFn: lambdaNodejs.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: IngestionStackProps) {
     super(scope, id);
@@ -336,6 +337,37 @@ export class IngestionStack extends Construct {
     // POST /claim-device — 1:1 hardware/wallet binding (replaces FastAPI /v1/claim-device)
     const claimDevice = this.api.root.addResource('claim-device');
     claimDevice.addMethod('POST', new apigateway.LambdaIntegration(claimDeviceFn));
+
+    // ── Stripe payout Lambda (Connect Express + PaymentIntent) ───────────────
+    const stripeSecretKey = secretsmanager.Secret.fromSecretNameV2(
+      this, 'StripeSecretKeySecret', 'vigia/stripe-secret-key',
+    );
+    const stripePublishableKey = secretsmanager.Secret.fromSecretNameV2(
+      this, 'StripePublishableKeySecret', 'vigia/stripe-publishable-key',
+    );
+
+    this.stripePayoutFn = new lambdaNodejs.NodejsFunction(this, 'StripePayoutFunction', {
+      entry:      path.join(__dirname, '../../../backend/functions/stripe-payout/index.ts'),
+      handler:    'handler',
+      runtime:    lambda.Runtime.NODEJS_20_X,
+      timeout:    cdk.Duration.seconds(30),
+      memorySize: 256,
+      bundling:   { externalModules: ['@aws-sdk/*'] },
+      environment: {
+        REWARDS_LEDGER_TABLE_NAME: '', // injected below after intelligence stack; placeholder here
+        STRIPE_SECRET_KEY:         stripeSecretKey.secretValue.unsafeUnwrap(),
+        STRIPE_PUBLISHABLE_KEY:    stripePublishableKey.secretValue.unsafeUnwrap(),
+        VGA_TO_USD_CENTS:          '100',
+      },
+    });
+
+    const stripeResource = this.api.root.addResource('stripe');
+    // REWARDS_LEDGER_TABLE_NAME injected by vigia-stack.ts after intelligence stack is created.
+    stripeResource.addResource('onboard-session').addMethod('POST',  new apigateway.LambdaIntegration(this.stripePayoutFn));
+    stripeResource.addResource('payout-session').addMethod('POST',   new apigateway.LambdaIntegration(this.stripePayoutFn));
+    stripeResource.addResource('financial-session').addMethod('POST', new apigateway.LambdaIntegration(this.stripePayoutFn));
+
+    new cdk.CfnOutput(this, 'StripePayoutFunctionArn', { value: this.stripePayoutFn.functionArn });
 
     // ── Sarvam AI proxy (keeps API key off mobile client) ────────────────────
     // The key is stored in Secrets Manager and injected as SARVAM_API_KEY at
