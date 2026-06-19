@@ -7,6 +7,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as iot from 'aws-cdk-lib/aws-iot';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
@@ -335,6 +336,32 @@ export class IngestionStack extends Construct {
     // POST /claim-device — 1:1 hardware/wallet binding (replaces FastAPI /v1/claim-device)
     const claimDevice = this.api.root.addResource('claim-device');
     claimDevice.addMethod('POST', new apigateway.LambdaIntegration(claimDeviceFn));
+
+    // ── Sarvam AI proxy (keeps API key off mobile client) ────────────────────
+    // The key is stored in Secrets Manager and injected as SARVAM_API_KEY at
+    // deploy time. Mobile apps call POST /sarvam-proxy/stt and /sarvam-proxy/tts
+    // using their Cognito JWT; this Lambda forwards to Sarvam's API.
+    const sarvamSecret = secretsmanager.Secret.fromSecretNameV2(
+      this, 'SarvamApiKeySecret', 'vigia/sarvam-api-key',
+    );
+
+    const sarvamProxyFn = new lambdaNodejs.NodejsFunction(this, 'SarvamProxyFunction', {
+      entry:   path.join(__dirname, '../../../backend/functions/sarvam-proxy/index.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      bundling: { externalModules: ['@aws-sdk/*'] },
+      environment: {
+        SARVAM_API_KEY: sarvamSecret.secretValue.unsafeUnwrap(),
+      },
+    });
+
+    const sarvamProxy = this.api.root.addResource('sarvam-proxy');
+    sarvamProxy.addResource('stt').addMethod('POST', new apigateway.LambdaIntegration(sarvamProxyFn));
+    sarvamProxy.addResource('tts').addMethod('POST', new apigateway.LambdaIntegration(sarvamProxyFn));
+
+    new cdk.CfnOutput(this, 'SarvamProxyFunctionArn', { value: sarvamProxyFn.functionArn });
 
     // GET /hazards
     const hazards = this.api.root.addResource('hazards', {

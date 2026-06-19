@@ -137,9 +137,22 @@ export class IntelligenceStack extends Construct {
       this.rewardsLedgerTable.grantWriteData(orchestratorFn);
       if (props.framesBucket) props.framesBucket.grantRead(orchestratorFn);
 
+      // Bedrock IAM: scope to the specific agent and foundation model in use.
+      // InvokeAgent target: agent TAWWC3SQ0L (all aliases).
+      // InvokeModel target: amazon.nova-lite-v1:0 (VLM path in orchestrator).
+      // Foundation model ARNs use a blank account field per Bedrock IAM docs.
       orchestratorFn.addToRolePolicy(new iam.PolicyStatement({
-        actions: ['bedrock:InvokeAgent', 'bedrock:InvokeModel'],
-        resources: ['*'],
+        actions: ['bedrock:InvokeAgent'],
+        resources: [
+          `arn:aws:bedrock:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:agent/TAWWC3SQ0L`,
+          `arn:aws:bedrock:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:agent-alias/TAWWC3SQ0L/*`,
+        ],
+      }));
+      orchestratorFn.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['bedrock:InvokeModel'],
+        resources: [
+          `arn:aws:bedrock:${cdk.Stack.of(this).region}::foundation-model/amazon.nova-lite-v1:0`,
+        ],
       }));
       orchestratorFn.addToRolePolicy(new iam.PolicyStatement({
         actions: ['secretsmanager:GetSecretValue'],
@@ -301,7 +314,10 @@ export class IntelligenceStack extends Construct {
       this.verifyHazardSyncFn.addToRolePolicy(
         new iam.PolicyStatement({
           actions: ['bedrock:InvokeAgent'],
-          resources: ['*'],
+          resources: [
+            `arn:aws:bedrock:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:agent/TAWWC3SQ0L`,
+            `arn:aws:bedrock:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:agent-alias/TAWWC3SQ0L/*`,
+          ],
         })
       );
       this.verifyHazardSyncFn.addToRolePolicy(

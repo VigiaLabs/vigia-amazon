@@ -2,6 +2,7 @@ import { APIGatewayProxyHandler } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { createHash } from 'crypto';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import ngeohash from 'ngeohash';
@@ -44,8 +45,24 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'STALE_TIMESTAMP' }) };
     }
 
+    // ── Frame integrity (H2) ─────────────────────────────────────────────────
+    // If the client supplies a frame, include its SHA-256 digest in the signed
+    // message. This prevents a man-in-the-middle swapping the raw frame bytes
+    // after the signature is produced. Clients that don't send a frame omit the
+    // field; servers accept both forms so rollout can be gradual.
+    let frameSha256: string | null = null;
+    if (frame_base64) {
+      frameSha256 = createHash('sha256')
+        .update(Buffer.from(frame_base64, 'base64'))
+        .digest('hex');
+    }
+
     // ── Ed25519 signature verification ───────────────────────────────────────
-    const payloadStr = `VIGIA:${hazardType}:${lat}:${lon}:${timestamp}:${confidence}`;
+    // Payload format (with frame): VIGIA:<type>:<lat>:<lon>:<ts>:<conf>:<sha256>
+    // Payload format (no frame):   VIGIA:<type>:<lat>:<lon>:<ts>:<conf>
+    const payloadStr = frameSha256
+      ? `VIGIA:${hazardType}:${lat}:${lon}:${timestamp}:${confidence}:${frameSha256}`
+      : `VIGIA:${hazardType}:${lat}:${lon}:${timestamp}:${confidence}`;
     const message = new TextEncoder().encode(payloadStr);
     const sigBytes = bs58.decode(signature);
     const pubkeyBytes = bs58.decode(publicKey);
