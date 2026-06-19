@@ -70,6 +70,12 @@ export class SessionStack extends Construct {
       timeout: cdk.Duration.seconds(10),
     });
 
+    // Reverse geocoding via Amazon Location Service (decoded geohash → region/city)
+    geohashResolverFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['geo-places:ReverseGeocode'],
+      resources: ['*'],
+    }));
+
     // Hash Chain Validator Lambda
     const hashChainValidatorFunction = new nodejs.NodejsFunction(this, 'HashChainValidatorFunction', {
       entry: path.join(__dirname, '../../../backend/src/ledger/validator.ts'),

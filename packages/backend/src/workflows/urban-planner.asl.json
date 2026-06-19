@@ -78,15 +78,9 @@
     "MergeResults": {
       "Type": "Pass",
       "Parameters": {
-        "path.$": "$.parallelResults[0].path",
-        "totalDistanceKm.$": "$.parallelResults[0].totalDistanceKm",
-        "hazardsAvoided.$": "$.parallelResults[0].hazardsAvoided",
-        "detourPercent.$": "$.parallelResults[0].detourPercent",
-        "landAcquisition.$": "$.parallelResults[1].landAcquisition",
-        "constructionCostPerKm.$": "$.parallelResults[1].constructionCostPerKm",
-        "compliance.$": "$.parallelResults[2].compliance",
-        "zoneIntersections.$": "$.parallelResults[2].zoneIntersections"
+        "merged.$": "States.JsonMerge(States.JsonMerge(States.ArrayGetItem($.parallelResults, 0), States.ArrayGetItem($.parallelResults, 1), false), States.ArrayGetItem($.parallelResults, 2), false)"
       },
+      "OutputPath": "$.merged",
       "Next": "CalculateROI"
     },
     "CalculateROI": {

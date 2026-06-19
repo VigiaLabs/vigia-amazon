@@ -1,6 +1,6 @@
 import { DynamoDBStreamHandler } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { BedrockAgentRuntimeClient, InvokeAgentCommand } from '@aws-sdk/client-bedrock-agent-runtime';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
@@ -25,6 +25,14 @@ const SLASH_FUNCTION  = process.env.SLASH_FUNCTION_NAME ?? '';
 const AGENT_ALIAS_ID = process.env.BEDROCK_AGENT_ALIAS_ID!;
 const ONE_TOKEN      = BigInt('1000000000000000000');
 
+// VLM sampling rate — fraction of events that run the expensive Bedrock VLM+Agent
+// verification. The remainder are scored from edge ONNX confidence. Probabilistic
+// verification is economically sound only because rewards are deduped per
+// (wallet, geohash) per 30-day window, blacklisted devices are rejected at ingest,
+// and sampled spoofs are slashed on-chain. Tunable without redeploying code.
+const VLM_SAMPLE_RATE = Number(process.env.VLM_SAMPLE_RATE ?? '0.02');
+const REWARD_DEDUP_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
+
 async function countVerifiedAtGeohash(geohash: string): Promise<number> {
   const res = await dynamodb.send(new QueryCommand({
     TableName: HAZARDS_TABLE,
@@ -38,24 +46,7 @@ async function countVerifiedAtGeohash(geohash: string): Promise<number> {
   return res.Count ?? 0;
 }
 
-// Returns true if this wallet was already rewarded for a VERIFIED hazard at this
-// geohash within the last 30 days. Scans the ledger for matching contributorId + geohash.
-const REWARD_LOCKOUT_SECONDS = 30 * 24 * 60 * 60; // 30 days
-async function alreadyRewardedAt(geohash: string, walletAddress: string): Promise<boolean> {
-  if (!walletAddress) return false;
-  const cutoff = new Date(Date.now() - REWARD_LOCKOUT_SECONDS * 1000).toISOString();
-  const res = await dynamodb.send(new QueryCommand({
-    TableName: LEDGER_TABLE,
-    IndexName: 'ContributorGeohashIndex',
-    KeyConditionExpression: 'contributorId = :w AND geohash = :g',
-    FilterExpression: '#ts > :cutoff',
-    ExpressionAttributeNames: { '#ts': 'timestamp' },
-    ExpressionAttributeValues: { ':w': walletAddress, ':g': geohash, ':cutoff': cutoff },
-    Limit: 1,
-    Select: 'COUNT',
-  }));
-  return (res.Count ?? 0) > 0;
-}
+// Reward dedup + atomic credit are handled together by tryCreditReward (below).
 
 function calcScore(count: number, vlmConf: number) {
   const discoveryBonus = count === 0 ? 40 : Math.min(count * 10, 30);
@@ -140,13 +131,47 @@ async function invokeAgent(geohash: string, hazardType: string, vlmReasoning: st
   throw new Error('Agent failed after all retries');
 }
 
-async function creditReward(walletAddress: string, hazardId: string) {
-  await dynamodb.send(new UpdateCommand({
-    TableName: REWARDS_TABLE,
-    Key: { wallet_address: walletAddress },
-    UpdateExpression: 'ADD pending_balance :amt, total_earned :amt SET last_updated = :now, nonce = if_not_exists(nonce, :zero), last_hazard_id = :hid',
-    ExpressionAttributeValues: { ':amt': ONE_TOKEN as any, ':now': new Date().toISOString(), ':zero': 0, ':hid': hazardId },
-  }));
+// Atomically credit exactly one reward per (wallet, geohash) per 30-day window.
+// The dedup lock (conditional Put), balance increment, and ledger write commit as a
+// single transaction: if the lock already exists the whole transaction is cancelled
+// and nothing is credited. This closes the read-then-write double-credit race and the
+// fast-path farming hole (rewards on every path are now recorded and deduped here).
+// Returns true iff a reward was actually credited.
+async function tryCreditReward(
+  walletAddress: string, geohash: string, hazardId: string, createdAt: string,
+): Promise<boolean> {
+  if (!walletAddress) return false;
+  const dedupKey = `rwd#${walletAddress}#${geohash}`;
+  const nowSec   = Math.floor(Date.now() / 1000);
+  const entry = {
+    ledgerId: `ledger-${hazardId}`, timestamp: createdAt,
+    contributorId: walletAddress, hazardId, geohash, credits: 1,
+  };
+  try {
+    await dynamodb.send(new TransactWriteCommand({
+      TransactItems: [
+        { Put: {
+            TableName: COOLDOWN_TABLE,
+            Item: { cooldownKey: dedupKey, hazardId, processedAt: createdAt, ttl: nowSec + REWARD_DEDUP_TTL_SECONDS },
+            ConditionExpression: 'attribute_not_exists(cooldownKey)',
+        } },
+        { Update: {
+            TableName: REWARDS_TABLE,
+            Key: { wallet_address: walletAddress },
+            UpdateExpression: 'ADD pending_balance :amt, total_earned :amt SET last_updated = :now, nonce = if_not_exists(nonce, :zero), last_hazard_id = :hid',
+            ExpressionAttributeValues: { ':amt': ONE_TOKEN as any, ':now': createdAt, ':zero': 0, ':hid': hazardId },
+        } },
+        { Put: {
+            TableName: LEDGER_TABLE,
+            Item: { ...entry, currentHash: createHash('sha256').update(JSON.stringify(entry)).digest('hex') },
+        } },
+      ],
+    }));
+    return true;
+  } catch (e: any) {
+    if (e.name === 'TransactionCanceledException') return false; // already rewarded in window
+    throw e;
+  }
 }
 
 export const handler = async (event: any) => {
@@ -166,7 +191,7 @@ export const handler = async (event: any) => {
     const lat                 = parseFloat(img.lat?.N ?? '0');
     const lon                 = parseFloat(img.lon?.N ?? '0');
     const hazardId            = `${geohash}#${timestamp}`;
-    const cooldownKey         = hazardId; // per-hazard dedup, not per-type
+    const cooldownKey         = `proc#${hazardId}`; // per-hazard processing dedup (namespaced from reward dedup)
 
     const cooldown = await dynamodb.send(new GetCommand({ TableName: COOLDOWN_TABLE, Key: { cooldownKey } }));
     if (cooldown.Item) { console.log(`[Orch] SKIP cooldown active: ${cooldownKey}`); continue; }
@@ -174,9 +199,47 @@ export const handler = async (event: any) => {
     const traceId   = `orch-${geohash}-${Date.now()}`;
     const createdAt = new Date().toISOString();
 
-    console.log(`[Orch] ── START hazardId=${hazardId} type=${hazardType} onnx=${confidence.toFixed(2)} s3_key=${s3_key ?? 'null'}`);
+    // 2% VLM sampling — only run the expensive Bedrock+Agent pipeline on 2% of events.
+    // The other 98% are scored deterministically from edge ONNX confidence alone.
+    const runVlm = Math.random() < VLM_SAMPLE_RATE;
+    console.log(`[Orch] ── START hazardId=${hazardId} type=${hazardType} onnx=${confidence.toFixed(2)} s3_key=${s3_key ?? 'null'} vlm_sample=${runVlm}`);
 
-    // ── §3 Fail-Closed VLM Quarantine ────────────────────────────────────────
+    if (!runVlm) {
+      // Fast path: deterministic verdict from ONNX confidence (no Bedrock calls).
+      const verdict = confidence >= 0.65 ? 'VERIFIED' : 'REJECTED';
+      const totalScore = Math.round(confidence * 100);
+      console.log(`[Orch] FAST_PATH hazardId=${hazardId} onnx=${confidence.toFixed(2)} verdict=${verdict}`);
+
+      await dynamodb.send(new UpdateCommand({
+        TableName: HAZARDS_TABLE, Key: { geohash, timestamp },
+        UpdateExpression: 'SET #s = :s, verificationScore = :score',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':s': verdict, ':score': totalScore },
+      }));
+
+      if (verdict === 'VERIFIED') {
+        await tryCreditReward(driverWalletAddress, geohash, hazardId, createdAt);
+      }
+
+      await dynamodb.send(new PutCommand({
+        TableName: TRACES_TABLE,
+        Item: {
+          traceId, hazardId,
+          vlm_reasoning: 'VLM skipped — deterministic fast path (98% sample)',
+          vlm_confidence: null, onnx_confidence: confidence,
+          total_score: totalScore, verdict, createdAt,
+          ttl: Math.floor(Date.now() / 1000) + 86400 * 7,
+        },
+      }));
+      await dynamodb.send(new PutCommand({
+        TableName: COOLDOWN_TABLE,
+        Item: { cooldownKey, processedAt: createdAt, ttl: Math.floor(Date.now() / 1000) + 30 },
+      }));
+      console.log(`[Orch] ── DONE hazardId=${hazardId} verdict=${verdict} (fast path) traceId=${traceId}`);
+      continue;
+    }
+
+    // ── §3 Fail-Closed VLM Quarantine (2% sample path) ───────────────────────
     let vlmConfidence: number;
     let vlmReasoning: string;
 
@@ -202,8 +265,11 @@ export const handler = async (event: any) => {
 
       const vlmText = (vlmRes.output?.message?.content?.[0] as any)?.text ?? '{}';
       console.log(`[Orch] VLM raw response: ${vlmText}`);
-      const vlm     = JSON.parse(vlmText) as { reasoning: string; confidence: number };
-      vlmConfidence = Math.max(0, Math.min(1, Number(vlm.confidence)));
+      // Nova may wrap JSON in prose — extract the first {...} block, fail-closed on garbage.
+      const jsonMatch = vlmText.match(/\{[\s\S]*\}/);
+      const vlm     = JSON.parse(jsonMatch ? jsonMatch[0] : '{}') as { reasoning?: string; confidence?: number };
+      const parsedConf = Number(vlm.confidence);
+      vlmConfidence = Number.isFinite(parsedConf) ? Math.max(0, Math.min(1, parsedConf)) : 0;
       vlmReasoning  = vlm.reasoning ?? 'No reasoning provided';
       console.log(`[Orch] VLM parsed: confidence=${vlmConfidence.toFixed(3)} reasoning="${vlmReasoning}"`);
 
@@ -223,7 +289,7 @@ export const handler = async (event: any) => {
       }
 
     } catch (err) {
-      // §3: Any failure → quarantine. creditReward is NEVER called.
+      // §3: Any failure → quarantine. No reward is credited on this path.
       console.error(`[Orch] VLM QUARANTINE hazardId=${hazardId} reason:`, (err as Error).message);
       await dynamodb.send(new UpdateCommand({
         TableName: HAZARDS_TABLE, Key: { geohash, timestamp },
@@ -279,21 +345,16 @@ export const handler = async (event: any) => {
     let rewardSkippedReason: string | null = null;
 
     if (verdict === 'VERIFIED') {
-      const duplicate = await alreadyRewardedAt(geohash, driverWalletAddress);
-      if (duplicate) {
-        rewardSkippedReason = `Hazard at this location (geohash ${geohash}) was already rewarded to this contributor within the last 30 days.`;
-        console.log(`[Orch] REWARD SKIP wallet=${driverWalletAddress} already rewarded at geohash=${geohash} within 30 days`);
-      } else {
-        if (driverWalletAddress) await creditReward(driverWalletAddress, hazardId);
+      const credited = await tryCreditReward(driverWalletAddress, geohash, hazardId, createdAt);
+      if (!credited) {
+        rewardSkippedReason = driverWalletAddress
+          ? `Already rewarded to this contributor at geohash ${geohash} within the last 30 days.`
+          : 'No contributor wallet on the hazard record.';
+        console.log(`[Orch] REWARD SKIP wallet=${driverWalletAddress || 'none'} geohash=${geohash}`);
       }
-      const entry = { ledgerId: `ledger-${hazardId}`, timestamp: createdAt, contributorId: driverWalletAddress, hazardId, geohash, credits: duplicate ? 0 : 1, previousHash: '0'.repeat(64) };
-      await dynamodb.send(new PutCommand({
-        TableName: LEDGER_TABLE,
-        Item: { ...entry, currentHash: createHash('sha256').update(JSON.stringify(entry)).digest('hex') },
-      }));
 
       // ── Submit to Solana (non-blocking — don't crash pipeline if chain is down) ──
-      if (driverWalletAddress) {
+      if (credited && driverWalletAddress) {
         const { latLngToCell } = await import('h3-js');
         const h3Index = BigInt('0x' + latLngToCell(lat, lon, 9));
         const epochDay = Math.floor(Date.now() / 1000 / 86400);

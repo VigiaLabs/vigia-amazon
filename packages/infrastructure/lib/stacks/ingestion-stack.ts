@@ -58,7 +58,9 @@ export class IngestionStack extends Construct {
 
     // ── VigiaDeviceRegistry — mobile wallet registrations (device_address = base58 Ed25519 pubkey) ──
     this.deviceRegistryTable = new dynamodb.Table(this, 'DeviceRegistryTable', {
-      tableName:    'VigiaDeviceRegistry',
+      // No explicit tableName — CDK auto-generates to avoid conflict with the
+      // pre-existing VigiaDeviceRegistry table (7 legacy records, not CF-managed).
+      // After deploy: migrate records from VigiaDeviceRegistry → this table's name.
       partitionKey: { name: 'device_address', type: dynamodb.AttributeType.STRING },
       billingMode:  dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -68,8 +70,10 @@ export class IngestionStack extends Construct {
     // device_id: ATECC608A serial-derived ID (e.g. "vigia-001")
     // cert_pem:  X.509 device certificate (PEM) issued by Vigia CA → IoT Core
     // last_seq:  anti-replay watermark (updated atomically by AttestationFn)
+    // No explicit tableName: combined with removalPolicy RETAIN, a fixed name would
+    // orphan the table on every rollback and collide on the next deploy. CDK
+    // auto-generates a stable per-stack name; consumers reference it via .tableName.
     this.piDeviceRegistryTable = new dynamodb.Table(this, 'PiDeviceRegistryTable', {
-      tableName:    'VigiaPiDeviceRegistry',
       partitionKey: { name: 'device_id', type: dynamodb.AttributeType.STRING },
       billingMode:  dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,   // retain — contains cert_pem, losing this loses attestation
@@ -77,8 +81,8 @@ export class IngestionStack extends Construct {
 
     // ── DeviceBindingsTable — 1:1 hardware ↔ wallet binding (immutable once set) ──
     // UNIQUE on device_id (PK) + UNIQUE on wallet_pubkey (GSI) = bidirectional exclusivity.
+    // Auto-named for the same orphan-on-rollback reason as PiDeviceRegistryTable.
     this.deviceBindingsTable = new dynamodb.Table(this, 'DeviceBindingsTable', {
-      tableName:    'VigiaDeviceBindings',
       partitionKey: { name: 'device_id',    type: dynamodb.AttributeType.STRING },
       billingMode:  dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,   // retain — losing bindings breaks reward attribution
@@ -89,6 +93,10 @@ export class IngestionStack extends Construct {
       partitionKey:   { name: 'wallet_pubkey', type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.ALL,
     });
+
+    // Surface the auto-generated names so the Pi-provisioning step can seed them.
+    new cdk.CfnOutput(this, 'PiDeviceRegistryTableName', { value: this.piDeviceRegistryTable.tableName });
+    new cdk.CfnOutput(this, 'DeviceBindingsTableName',   { value: this.deviceBindingsTable.tableName });
 
     // ── AttestationLogTable — append-only verified event log ─────────────────
     const attestationLogTable = new dynamodb.Table(this, 'AttestationLogTable', {
@@ -197,7 +205,10 @@ export class IngestionStack extends Construct {
                 LogWrite: new iam.PolicyDocument({
                   statements: [new iam.PolicyStatement({
                     actions:   ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-                    resources: ['*'],
+                    // Scoped to the attest-errors log group (and its streams) only.
+                    resources: [
+                      `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:/vigia/iot/attest-errors:*`,
+                    ],
                   })],
                 }),
               },

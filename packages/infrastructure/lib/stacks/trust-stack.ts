@@ -17,14 +17,9 @@ export class TrustStack extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // GSI for reward deduplication: query by contributorId + geohash
-    this.ledgerTable.addGlobalSecondaryIndex({
-      indexName: 'ContributorGeohashIndex',
-      partitionKey: { name: 'contributorId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'geohash', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.INCLUDE,
-      nonKeyAttributes: ['timestamp', 'credits'],
-    });
+    // ContributorGeohashIndex GSI exists on the live table but was created outside
+    // CloudFormation state — managing it here causes CF to attempt re-creation.
+    // Leave unmanaged by CF; the GSI remains active on the table.
 
     // Placeholder: Hash chain validator Lambda will be added in Phase 5
   }

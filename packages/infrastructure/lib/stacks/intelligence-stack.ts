@@ -10,6 +10,7 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as pipes from 'aws-cdk-lib/aws-pipes';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as destinations from 'aws-cdk-lib/aws-lambda-destinations';
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as path from 'path';
@@ -145,6 +146,18 @@ export class IntelligenceStack extends Construct {
         resources: ['arn:aws:secretsmanager:us-east-1:203800220566:secret:vigia-solana-authority-ro47l5'],
       }));
 
+      // Async-invoke DLQ — the orchestrator is a fire-and-forget (async) target of
+      // the EventBridge pipe. Capture records that exhaust retries instead of
+      // dropping them silently; redrive after fixing the cause.
+      const orchestratorDlq = new sqs.Queue(this, 'OrchestratorDLQ', {
+        retentionPeriod: cdk.Duration.days(14),
+      });
+      orchestratorFn.configureAsyncInvoke({
+        retryAttempts: 2,
+        onFailure: new destinations.SqsDestination(orchestratorDlq),
+      });
+      new cdk.CfnOutput(this, 'OrchestratorDLQUrl', { value: orchestratorDlq.queueUrl });
+
       // Slash-node Lambda (invoked async by orchestrator on spoof detection)
       const slashNodeFn = new lambdaNodejs.NodejsFunction(this, 'SlashNodeFunction', {
         entry: path.join(__dirname, '../../../backend/functions/slash-node/index.ts'),
@@ -166,8 +179,22 @@ export class IntelligenceStack extends Construct {
       }));
       slashNodeFn.addToRolePolicy(new iam.PolicyStatement({
         actions: ['dynamodb:UpdateItem'],
-        resources: ['*'], // VigiaDeviceRegistry is not in this stack
+        // Scoped to the device registry table (blacklist write) rather than '*'.
+        resources: [
+          props.deviceRegistryTable?.tableArn ??
+            `arn:aws:dynamodb:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:table/VigiaDeviceRegistry`,
+        ],
       }));
+
+      // Async-invoke DLQ for slash — a failed slash means a detected spoofer goes
+      // unpunished, so failures must be captured for redrive, not lost.
+      const slashDlq = new sqs.Queue(this, 'SlashNodeDLQ', {
+        retentionPeriod: cdk.Duration.days(14),
+      });
+      slashNodeFn.configureAsyncInvoke({
+        retryAttempts: 2,
+        onFailure: new destinations.SqsDestination(slashDlq),
+      });
 
       // Grant orchestrator permission to invoke slash-node async
       slashNodeFn.grantInvoke(orchestratorFn);
@@ -182,7 +209,14 @@ export class IntelligenceStack extends Construct {
       props.hazardsTable.grantStreamRead(pipeRole);
       orchestratorFn.grantInvoke(pipeRole);
 
-      new pipes.CfnPipe(this, 'HazardsToOrchestratorPipe', {
+      // CfnPipe (L1) only auto-depends on the role's ARN, not on the inline policy
+      // that grantStreamRead attaches. Without an explicit dependency CloudFormation
+      // creates the pipe before the policy propagates, and the pipe's stream-access
+      // validation fails with "Cannot access stream / did not stabilize". Force both
+      // pipes to wait for the role's default policy.
+      const pipePolicy = pipeRole.node.tryFindChild('DefaultPolicy') as iam.Policy;
+
+      const orchestratorPipe = new pipes.CfnPipe(this, 'HazardsToOrchestratorPipe', {
         roleArn: pipeRole.roleArn,
         source: props.hazardsTable.tableStreamArn!,
         sourceParameters: {
@@ -202,6 +236,7 @@ export class IntelligenceStack extends Construct {
           },
         },
       });
+      if (pipePolicy) orchestratorPipe.node.addDependency(pipePolicy);
 
       // ── EventBridge Pipe: VERIFIED hazards → Maintenance Queue (fan-out) ────
       // Filters to INSERT events where status = VERIFIED, routes to SQS for maintenance processing.
@@ -212,17 +247,20 @@ export class IntelligenceStack extends Construct {
         });
         maintenanceSqs.grantSendMessages(pipeRole);
 
-        new pipes.CfnPipe(this, 'VerifiedHazardsToMaintenancePipe', {
+        const maintenancePipe = new pipes.CfnPipe(this, 'VerifiedHazardsToMaintenancePipe', {
           roleArn: pipeRole.roleArn,
           source: props.hazardsTable.tableStreamArn!,
           sourceParameters: {
             dynamoDbStreamParameters: { startingPosition: 'LATEST', batchSize: 1 },
+            // Hazards are inserted as PENDING and promoted to VERIFIED via an UPDATE,
+            // so the verification transition is a MODIFY event, not INSERT.
             filterCriteria: {
-              filters: [{ pattern: '{"eventName": ["INSERT"], "dynamodb": {"NewImage": {"status": {"S": ["VERIFIED"]}}}}' }],
+              filters: [{ pattern: '{"eventName": ["MODIFY"], "dynamodb": {"NewImage": {"status": {"S": ["VERIFIED"]}}}}' }],
             },
           },
           target: maintenanceSqs.queueArn,
         });
+        if (pipePolicy) maintenancePipe.node.addDependency(pipePolicy);
 
         new cdk.CfnOutput(this, 'VerifiedHazardsQueueUrl', { value: maintenanceSqs.queueUrl });
       }
@@ -322,7 +360,7 @@ export class IntelligenceStack extends Construct {
       }
 
       // Urban Planner Lambda
-      const routeCalculatorName = `${cdk.Stack.of(this).stackName}-VigiaRouteCalculator`;
+      const routeCalculatorName = `${cdk.Stack.of(this).stackName}-RouteCalc`;
 
       this.urbanPlannerFn = new lambda.Function(this, 'UrbanPlannerFunction', {
         runtime: lambda.Runtime.PYTHON_3_12,
@@ -361,14 +399,16 @@ export class IntelligenceStack extends Construct {
       // PHASE 3: Amazon Location Service Geofences & Route Calculator
       // ═══════════════════════════════════════════════════════════
 
+      // Names suffixed with stack name to avoid collision with pre-existing
+      // VigiaRestrictedZones and VigiaRouteCalculator resources (not CF-managed).
+      const stackSuffix = cdk.Stack.of(this).stackName;
       this.geofenceCollection = new location.CfnGeofenceCollection(this, 'VigiaRestrictedZones', {
-        collectionName: 'VigiaRestrictedZones',
+        collectionName: `${stackSuffix}-RestrictedZones`,
         description: 'Geofence collection for urban planning zone restrictions',
       });
 
-      // Route Calculator for pin-based routing
       const routeCalculator = new location.CfnRouteCalculator(this, 'VigiaRouteCalculator', {
-        calculatorName: routeCalculatorName,
+        calculatorName: `${stackSuffix}-RouteCalc`,
         dataSource: 'Esri',
         description: 'Route calculator for fastest and safest path planning',
       });

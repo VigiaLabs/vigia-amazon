@@ -23,6 +23,27 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     const payload = JSON.parse(event.body || '{}');
     const { hazardType, lat, lon, timestamp, confidence, signature, publicKey, frame_base64 } = payload;
 
+    // ── Input validation — reject malformed/out-of-range before any trust ─────
+    // Values are validated but never mutated: the Ed25519 signature covers the
+    // exact wire values, so coercion would break verification.
+    const bad =
+      typeof hazardType !== 'string' || hazardType.length === 0 || hazardType.length > 64 ||
+      typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90  || lat > 90  ||
+      typeof lon !== 'number' || !Number.isFinite(lon) || lon < -180 || lon > 180 ||
+      typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 ||
+      typeof timestamp !== 'number' || !Number.isFinite(timestamp) ||
+      typeof signature !== 'string' || typeof publicKey !== 'string';
+    if (bad) {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'INVALID_PAYLOAD' }) };
+    }
+
+    // ── Timestamp freshness — bound replay window (unit-aware: s or ms) ───────
+    const tsMs = timestamp > 1e12 ? timestamp : timestamp * 1000;
+    const FRESHNESS_MS = 10 * 60 * 1000;
+    if (Math.abs(Date.now() - tsMs) > FRESHNESS_MS) {
+      return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'STALE_TIMESTAMP' }) };
+    }
+
     // ── Ed25519 signature verification ───────────────────────────────────────
     const payloadStr = `VIGIA:${hazardType}:${lat}:${lon}:${timestamp}:${confidence}`;
     const message = new TextEncoder().encode(payloadStr);
@@ -41,6 +62,10 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     }));
     if (!Item) {
       return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'DEVICE_NOT_REGISTERED' }) };
+    }
+    // Enforce slashing — a blacklisted (slashed) device may no longer submit.
+    if (Item.blacklisted === true) {
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'DEVICE_BLACKLISTED' }) };
     }
 
     const geohash = ngeohash.encode(lat, lon, 7);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useConnection } from '@solana/wallet-adapter-react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { solanaExplorerAddress } from '../lib/constants';
@@ -20,14 +20,20 @@ const VIGIA_MINT = new PublicKey(process.env.NEXT_PUBLIC_VIGIA_MINT || '5UXva9WV
 
 export function RewardsWidget() {
   const { connection } = useConnection();
+  const wallet = useWallet();
   const device = useDeviceWallet();
   const [tokenBalance, setTokenBalance] = useState<string | null>(null);
 
+  // Show balance for whichever address receives bounties:
+  // Phantom connected → Phantom pubkey (persistent across sessions)
+  // No Phantom → device keypair (ephemeral, lost on cookie clear)
+  const rewardAddress = wallet.publicKey?.toBase58() ?? device.address;
+
   useEffect(() => {
-    if (device.status !== 'ready' || !device.address) { setTokenBalance(null); return; }
+    if (!rewardAddress) { setTokenBalance(null); return; }
     const fetchBal = async () => {
       try {
-        const owner = new PublicKey(device.address);
+        const owner = new PublicKey(rewardAddress);
         const ata = getAssociatedTokenAddressSync(VIGIA_MINT, owner);
         const bal = await connection.getTokenAccountBalance(ata);
         setTokenBalance(bal.value.uiAmountString ?? '0');
@@ -38,9 +44,9 @@ export function RewardsWidget() {
     fetchBal();
     const id = setInterval(fetchBal, 10000);
     return () => clearInterval(id);
-  }, [device.status, device.address, connection]);
+  }, [rewardAddress, connection]);
 
-  const addr = device.address;
+  const addr = rewardAddress;
 
   return (
     <div style={{
