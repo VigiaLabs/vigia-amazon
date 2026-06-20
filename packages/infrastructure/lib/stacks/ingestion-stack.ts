@@ -453,5 +453,28 @@ export class IngestionStack extends Construct {
 
     const tracesByHazard = traces.addResource('{hazardId}');
     tracesByHazard.addMethod('GET', new apigateway.LambdaIntegration(tracesByHazardFn));
+
+    // ── POST /v1/road-ahead — route-ahead hazard query for real-time voice copilot ──
+    const roadAheadFn = new lambdaNodejs.NodejsFunction(this, 'RoadAheadFunction', {
+      entry: path.join(__dirname, '../../../backend/functions/road-ahead/index.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.seconds(8),
+      environment: {
+        HAZARDS_TABLE_NAME: this.hazardsTable.tableName,
+      },
+      logRetention: logs.RetentionDays.ONE_WEEK,
+    });
+    this.hazardsTable.grantReadData(roadAheadFn);
+
+    const v1 = this.api.root.addResource('v1');
+    const roadAhead = v1.addResource('road-ahead', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: ['POST', 'OPTIONS'],
+        allowHeaders: ['Content-Type', 'Authorization'],
+      },
+    });
+    roadAhead.addMethod('POST', new apigateway.LambdaIntegration(roadAheadFn));
   }
 }
