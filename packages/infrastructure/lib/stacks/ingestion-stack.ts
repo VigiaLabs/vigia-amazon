@@ -28,6 +28,7 @@ export class IngestionStack extends Construct {
   public readonly framesbucket: s3.Bucket;
   public readonly api: apigateway.RestApi;
   public readonly stripePayoutFn: lambdaNodejs.NodejsFunction;
+  public readonly stripeWebhookFn: lambdaNodejs.NodejsFunction;  // P0-4: async settlement reconciliation
 
   constructor(scope: Construct, id: string, props: IngestionStackProps) {
     super(scope, id);
@@ -371,11 +372,30 @@ export class IngestionStack extends Construct {
       },
     });
 
+    // ── Stripe webhook Lambda (P0-4: async settlement reconciliation) ────────
+    const stripeWebhookSecret = secretsmanager.Secret.fromSecretNameV2(
+      this, 'StripeWebhookSecret', 'vigia/stripe-webhook-secret',
+    );
+    this.stripeWebhookFn = new lambdaNodejs.NodejsFunction(this, 'StripeWebhookFunction', {
+      entry:      path.join(__dirname, '../../../backend/functions/stripe-webhook/index.ts'),
+      handler:    'handler',
+      runtime:    lambda.Runtime.NODEJS_20_X,
+      timeout:    cdk.Duration.seconds(15),
+      memorySize: 256,
+      bundling:   { externalModules: ['@aws-sdk/*'] },
+      environment: {
+        REWARDS_LEDGER_TABLE_NAME: '', // injected by vigia-stack.ts after intelligence stack
+        STRIPE_SECRET_KEY:         stripeSecretKey.secretValue.unsafeUnwrap(),
+        STRIPE_WEBHOOK_SECRET:     stripeWebhookSecret.secretValue.unsafeUnwrap(),
+      },
+    });
+
     const stripeResource = this.api.root.addResource('stripe');
     // REWARDS_LEDGER_TABLE_NAME injected by vigia-stack.ts after intelligence stack is created.
     stripeResource.addResource('onboard-session').addMethod('POST',  new apigateway.LambdaIntegration(this.stripePayoutFn));
     stripeResource.addResource('payout-session').addMethod('POST',   new apigateway.LambdaIntegration(this.stripePayoutFn));
     stripeResource.addResource('financial-session').addMethod('POST', new apigateway.LambdaIntegration(this.stripePayoutFn));
+    stripeResource.addResource('webhook').addMethod('POST',          new apigateway.LambdaIntegration(this.stripeWebhookFn));
 
     new cdk.CfnOutput(this, 'StripePayoutFunctionArn', { value: this.stripePayoutFn.functionArn });
 

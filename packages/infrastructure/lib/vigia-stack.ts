@@ -63,6 +63,13 @@ export class VigiaStack extends cdk.Stack {
     );
     intelligenceWithHazardsStack.rewardsLedgerTable.grantReadWriteData(ingestionStack.stripePayoutFn);
 
+    // P0-4: same wiring for the webhook Lambda (re-credits balance on failed settlement).
+    ingestionStack.stripeWebhookFn.addEnvironment(
+      'REWARDS_LEDGER_TABLE_NAME',
+      intelligenceWithHazardsStack.rewardsLedgerTable.tableName,
+    );
+    intelligenceWithHazardsStack.rewardsLedgerTable.grantReadWriteData(ingestionStack.stripeWebhookFn);
+
     // Add verify-hazard-sync endpoint to ingestion API
     if (intelligenceWithHazardsStack.verifyHazardSyncFn) {
       const verifySync = ingestionStack.api.root.addResource('verify-hazard-sync', {
