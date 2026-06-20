@@ -34,6 +34,7 @@ export class IngestionStack extends Construct {
 
     // ── HazardsTable (mobile-submitted + hardware-attested hazards) ──────────
     this.hazardsTable = new dynamodb.Table(this, 'HazardsTable', {
+      pointInTimeRecovery: true,  // P1 fix: recover hazard/reward-linked data after a bad write
       partitionKey: { name: 'geohash',    type: dynamodb.AttributeType.STRING },
       sortKey:      { name: 'timestamp',  type: dynamodb.AttributeType.STRING },
       billingMode:  dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -60,6 +61,7 @@ export class IngestionStack extends Construct {
 
     // ── VigiaDeviceRegistry — mobile wallet registrations (device_address = base58 Ed25519 pubkey) ──
     this.deviceRegistryTable = new dynamodb.Table(this, 'DeviceRegistryTable', {
+      pointInTimeRecovery: true,  // P1 fix: identity table — recover wallet registrations
       // No explicit tableName — CDK auto-generates to avoid conflict with the
       // pre-existing VigiaDeviceRegistry table (7 legacy records, not CF-managed).
       // After deploy: migrate records from VigiaDeviceRegistry → this table's name.
@@ -76,6 +78,7 @@ export class IngestionStack extends Construct {
     // orphan the table on every rollback and collide on the next deploy. CDK
     // auto-generates a stable per-stack name; consumers reference it via .tableName.
     this.piDeviceRegistryTable = new dynamodb.Table(this, 'PiDeviceRegistryTable', {
+      pointInTimeRecovery: true,  // P1 fix: holds cert_pem — recover attestation identity
       partitionKey: { name: 'device_id', type: dynamodb.AttributeType.STRING },
       billingMode:  dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,   // retain — contains cert_pem, losing this loses attestation
@@ -85,6 +88,7 @@ export class IngestionStack extends Construct {
     // UNIQUE on device_id (PK) + UNIQUE on wallet_pubkey (GSI) = bidirectional exclusivity.
     // Auto-named for the same orphan-on-rollback reason as PiDeviceRegistryTable.
     this.deviceBindingsTable = new dynamodb.Table(this, 'DeviceBindingsTable', {
+      pointInTimeRecovery: true,  // P1 fix: losing bindings breaks reward attribution
       partitionKey: { name: 'device_id',    type: dynamodb.AttributeType.STRING },
       billingMode:  dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,   // retain — losing bindings breaks reward attribution
@@ -102,6 +106,7 @@ export class IngestionStack extends Construct {
 
     // ── AttestationLogTable — append-only verified event log ─────────────────
     const attestationLogTable = new dynamodb.Table(this, 'AttestationLogTable', {
+      pointInTimeRecovery: true,  // P1 fix: append-only verified-event audit log
       tableName:    'VigiaAttestationLog',
       partitionKey: { name: 'pk',         type: dynamodb.AttributeType.STRING }, // device_id#seq
       billingMode:  dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -383,6 +388,9 @@ export class IngestionStack extends Construct {
       runtime: lambda.Runtime.NODEJS_20_X,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
+      // P0-2 fix (partial): cap blast radius of an open/abused proxy until the
+      // Cognito authorizer lands — bounds Sarvam key quota drain + account concurrency.
+      reservedConcurrentExecutions: 10,
       bundling: { externalModules: ['@aws-sdk/*'] },
       environment: {
         SARVAM_API_KEY: sarvamSecret.secretValue.unsafeUnwrap(),

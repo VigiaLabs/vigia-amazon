@@ -23,6 +23,7 @@ export interface IntelligenceStackProps {
   maintenanceQueueTable?: dynamodb.Table;
   economicMetricsTable?: dynamodb.Table;
   deviceRegistryTable?: dynamodb.Table;
+  deviceBindingsTable?: dynamodb.Table;  // P0-5: device→wallet 1:1 binding for reward attribution
   framesBucket?: s3.Bucket;
 }
 
@@ -69,6 +70,7 @@ export class IntelligenceStack extends Construct {
 
     // BME Rewards Ledger (off-chain pending balances)
     this.rewardsLedgerTable = new dynamodb.Table(this, 'RewardsLedgerTable', {
+      pointInTimeRecovery: true,  // P1 fix: the money ledger — must be recoverable
       partitionKey: { name: 'wallet_address', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -119,6 +121,7 @@ export class IntelligenceStack extends Construct {
           HAZARDS_TABLE_NAME: props.hazardsTable.tableName,
           LEDGER_TABLE_NAME: props.ledgerTable.tableName,
           REWARDS_LEDGER_TABLE_NAME: this.rewardsLedgerTable.tableName,
+          DEVICE_BINDINGS_TABLE_NAME: props.deviceBindingsTable?.tableName ?? '',
           FRAMES_BUCKET_NAME: props.framesBucket?.bucketName ?? '',
           BEDROCK_AGENT_ID: process.env.BEDROCK_AGENT_ID || 'placeholder',
           BEDROCK_AGENT_ALIAS_ID: process.env.BEDROCK_AGENT_ALIAS_ID || 'placeholder',
@@ -136,6 +139,7 @@ export class IntelligenceStack extends Construct {
       props.hazardsTable.grantReadWriteData(orchestratorFn);
       props.ledgerTable.grantWriteData(orchestratorFn);
       this.rewardsLedgerTable.grantWriteData(orchestratorFn);
+      if (props.deviceBindingsTable) props.deviceBindingsTable.grantReadData(orchestratorFn);
       if (props.framesBucket) props.framesBucket.grantRead(orchestratorFn);
 
       // Bedrock IAM: scope to the specific agent and foundation model in use.

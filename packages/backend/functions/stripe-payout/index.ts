@@ -112,28 +112,61 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const stripeAccountId: string | undefined = item.stripe_account_id;
     if (!stripeAccountId) return err(400, 'Stripe account not linked — complete onboarding first');
 
-    const pendingBalance = BigInt(item.pending_balance?.toString() ?? '0');
-    const pendingMicro   = Number(pendingBalance);
+    const pendingMicro = Number(BigInt(item.pending_balance?.toString() ?? '0'));
     if (pendingMicro <= 0) return err(400, 'No pending balance to claim');
 
     // Convert micro-VGA (1e-6 VGA) to USD cents: pendingMicro / 1e6 * VGA_TO_USD_CENTS
     const amountCents = Math.floor((pendingMicro / 1_000_000) * VGA_TO_USD_CENTS);
     if (amountCents < 100) return err(400, 'Minimum payout is 1.00 USD');
 
-    const intent = await stripe.paymentIntents.create({
-      amount:                amountCents,
-      currency:              'usd',
-      payment_method_types:  ['us_bank_account'],
-      transfer_data:         { destination: stripeAccountId },
-      metadata:              { vigia_wallet: wallet, micro_vga: pendingMicro.toString() },
-    });
+    // P0-4 fix: atomically debit the claimed balance BEFORE any money moves. The
+    // conditional update fails if a concurrent or replayed payout already drained
+    // it, so the same balance can never be cashed out twice.
+    try {
+      await dynamo.send(new UpdateCommand({
+        TableName: REWARDS_TABLE,
+        Key: { wallet_address: wallet },
+        UpdateExpression:    'ADD pending_balance :neg, paid_out_total :claim',
+        ConditionExpression: 'pending_balance >= :claim',
+        ExpressionAttributeValues: { ':neg': -pendingMicro, ':claim': pendingMicro },
+      }));
+    } catch (e: unknown) {
+      if ((e as { name?: string }).name === 'ConditionalCheckFailedException') {
+        return err(409, 'Balance already claimed or changed — refresh and retry');
+      }
+      throw e;
+    }
 
-    return ok({
-      client_secret:     intent.client_secret,
-      publishable_key:   STRIPE_PUBLISHABLE,
-      amount_cents:      amountCents,
-      pending_micro_vga: pendingMicro,
-    });
+    // P0-4 fix: deterministic idempotency key bound to the signed request timestamp,
+    // so a retried/replayed request reuses the same PaymentIntent instead of
+    // creating a second fiat transfer.
+    const proofTs = event.headers['x-wallet-timestamp'] ?? event.headers['X-Wallet-Timestamp'] ?? '';
+
+    try {
+      const intent = await stripe.paymentIntents.create({
+        amount:                amountCents,
+        currency:              'usd',
+        payment_method_types:  ['us_bank_account'],
+        transfer_data:         { destination: stripeAccountId },
+        metadata:              { vigia_wallet: wallet, micro_vga: pendingMicro.toString() },
+      }, { idempotencyKey: `payout#${wallet}#${proofTs}` });
+
+      return ok({
+        client_secret:     intent.client_secret,
+        publishable_key:   STRIPE_PUBLISHABLE,
+        amount_cents:      amountCents,
+        pending_micro_vga: pendingMicro,
+      });
+    } catch (e) {
+      // Stripe failed after we debited — re-credit so the user keeps their tokens.
+      await dynamo.send(new UpdateCommand({
+        TableName: REWARDS_TABLE,
+        Key: { wallet_address: wallet },
+        UpdateExpression: 'ADD pending_balance :claim, paid_out_total :neg',
+        ExpressionAttributeValues: { ':claim': pendingMicro, ':neg': -pendingMicro },
+      }));
+      throw e;
+    }
   }
 
   // ── Financial Connections session (bank-account linking) ─────────────────

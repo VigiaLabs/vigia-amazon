@@ -52,6 +52,7 @@ export class VigiaStack extends cdk.Stack {
       maintenanceQueueTable: innovationStack.maintenanceQueueTable,
       economicMetricsTable: innovationStack.economicMetricsTable,
       deviceRegistryTable: ingestionStack.deviceRegistryTable,
+      deviceBindingsTable: ingestionStack.deviceBindingsTable,  // P0-5: device→wallet binding for reward attribution
       framesBucket: ingestionStack.framesbucket,
     });
 

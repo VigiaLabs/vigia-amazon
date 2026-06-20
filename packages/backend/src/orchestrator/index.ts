@@ -19,6 +19,9 @@ const TRACES_TABLE    = process.env.TRACES_TABLE_NAME!;
 const HAZARDS_TABLE   = process.env.HAZARDS_TABLE_NAME!;
 const LEDGER_TABLE    = process.env.LEDGER_TABLE_NAME!;
 const REWARDS_TABLE   = process.env.REWARDS_LEDGER_TABLE_NAME!;
+// P0-5 fix: device→wallet bindings. Rewards are attributed to the wallet bound to
+// the attesting Pi, never to a client-supplied field.
+const BINDINGS_TABLE  = process.env.DEVICE_BINDINGS_TABLE_NAME ?? '';
 const FRAMES_BUCKET   = process.env.FRAMES_BUCKET_NAME!;
 const AGENT_ID        = process.env.BEDROCK_AGENT_ID!;
 const SLASH_FUNCTION  = process.env.SLASH_FUNCTION_NAME ?? '';
@@ -174,6 +177,25 @@ async function tryCreditReward(
   }
 }
 
+// P0-5 fix: hardware-attested-ONLY rewards. Returns the wallet 1:1-bound to the
+// attesting Pi (DeviceBindingsTable), or '' for non-attested / mobile / unbound
+// hazards — which mint nothing. To farm, an attacker now needs a physically
+// provisioned, CA-certified Pi bound to a wallet, not just a self-generated keypair.
+async function rewardWalletForHazard(source: string, deviceId: string): Promise<string> {
+  if (source !== 'hardware_attested' || !deviceId || !BINDINGS_TABLE) return '';
+  try {
+    const res = await dynamodb.send(new GetCommand({
+      TableName: BINDINGS_TABLE,
+      Key: { device_id: deviceId },
+      ProjectionExpression: 'wallet_pubkey',
+    }));
+    return (res.Item?.wallet_pubkey as string) ?? '';
+  } catch (e: any) {
+    console.error('[Orch] device-binding lookup failed:', e.message);
+    return '';
+  }
+}
+
 export const handler = async (event: any) => {
   // EventBridge Pipes sends events as a flat array; DynamoDB Streams sends {Records: [...]}
   const records: any[] = Array.isArray(event) ? event : (event.Records ?? []);
@@ -185,8 +207,14 @@ export const handler = async (event: any) => {
     const geohash             = img.geohash.S!;
     const timestamp           = img.timestamp.S!;
     const hazardType          = img.hazardType.S!;
-    const confidence          = parseFloat(img.confidence.N!);
+    // Hardware-attested hazards carry severity_score (RRI), not a client confidence.
+    const confidence          = img.confidence?.N ? parseFloat(img.confidence.N)
+                              : img.severity_score?.N ? parseFloat(img.severity_score.N) : 0;
     const driverWalletAddress = img.driverWalletAddress?.S ?? '';
+    // P0-5 fix: `source` is set to 'hardware_attested' by AttestationFn after ECDSA
+    // P-256 verification; any other source (mobile self-asserted) mints nothing.
+    const source              = img.source?.S ?? 'mobile';
+    const lastDeviceId        = img.last_device_id?.S ?? img.device_id?.S ?? '';
     const s3_key              = img.s3_key?.S ?? null;
     const lat                 = parseFloat(img.lat?.N ?? '0');
     const lon                 = parseFloat(img.lon?.N ?? '0');
@@ -201,7 +229,10 @@ export const handler = async (event: any) => {
 
     // 2% VLM sampling — only run the expensive Bedrock+Agent pipeline on 2% of events.
     // The other 98% are scored deterministically from edge ONNX confidence alone.
-    const runVlm = Math.random() < VLM_SAMPLE_RATE;
+    // Hardware-attested events skip VLM sampling — the ECDSA proof IS the verification
+    // and they carry no dashcam frame. Mobile events keep VLM sampling (map quality
+    // only; mobile mints no reward — see rewardWalletForHazard).
+    const runVlm = source !== 'hardware_attested' && Math.random() < VLM_SAMPLE_RATE;
     console.log(`[Orch] ── START hazardId=${hazardId} type=${hazardType} onnx=${confidence.toFixed(2)} s3_key=${s3_key ?? 'null'} vlm_sample=${runVlm}`);
 
     if (!runVlm) {
@@ -218,7 +249,15 @@ export const handler = async (event: any) => {
       }));
 
       if (verdict === 'VERIFIED') {
-        await tryCreditReward(driverWalletAddress, geohash, hazardId, createdAt);
+        // P0-5 fix: mint only for hardware-attested hazards, to the device-bound wallet.
+        const rewardWallet = await rewardWalletForHazard(source, lastDeviceId);
+        if (rewardWallet) {
+          await tryCreditReward(rewardWallet, geohash, hazardId, createdAt);
+        }
+        // else: mobile/unbound hazard — no reward (hardware-attested-only).
+        // STUB: future mobile-hazard rewards (gated on proof-of-location) hook in here.
+        // TODO: mirror attested credits to Solana on this fast path (chain submit
+        // currently lives in the VLM path only).
       }
 
       await dynamodb.send(new PutCommand({
@@ -345,16 +384,22 @@ export const handler = async (event: any) => {
     let rewardSkippedReason: string | null = null;
 
     if (verdict === 'VERIFIED') {
-      const credited = await tryCreditReward(driverWalletAddress, geohash, hazardId, createdAt);
+      // P0-5 fix: mint only for hardware-attested hazards, to the device-bound wallet.
+      // The VLM path only runs for non-attested (mobile) hazards, so this resolves to
+      // '' today and mints nothing — kept device-bound for when the paths converge.
+      const rewardWallet = await rewardWalletForHazard(source, lastDeviceId);
+      const credited = rewardWallet
+        ? await tryCreditReward(rewardWallet, geohash, hazardId, createdAt)
+        : false;
       if (!credited) {
-        rewardSkippedReason = driverWalletAddress
+        rewardSkippedReason = rewardWallet
           ? `Already rewarded to this contributor at geohash ${geohash} within the last 30 days.`
-          : 'No contributor wallet on the hazard record.';
-        console.log(`[Orch] REWARD SKIP wallet=${driverWalletAddress || 'none'} geohash=${geohash}`);
+          : 'Reward skipped — hardware-attested hazards only (no device-bound wallet).';
+        console.log(`[Orch] REWARD SKIP wallet=${rewardWallet || 'none'} geohash=${geohash}`);
       }
 
       // ── Submit to Solana (non-blocking — don't crash pipeline if chain is down) ──
-      if (credited && driverWalletAddress) {
+      if (credited && rewardWallet) {
         const { latLngToCell } = await import('h3-js');
         const h3Index = BigInt('0x' + latLngToCell(lat, lon, 9));
         const epochDay = Math.floor(Date.now() / 1000 / 86400);
@@ -362,7 +407,7 @@ export const handler = async (event: any) => {
         try {
           const solResult = await submitHazardToChain({
             h3Index, epochDay,
-            discovererPubkey: driverWalletAddress,
+            discovererPubkey: rewardWallet,
             vlmConfidence: vlmConfidence,
             onnxConfidence: confidence,
             signatureHash: sigHash,
