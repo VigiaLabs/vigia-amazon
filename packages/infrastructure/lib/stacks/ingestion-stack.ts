@@ -157,9 +157,14 @@ export class IngestionStack extends Construct {
       runtime: lambda.Runtime.NODEJS_20_X,
       timeout: cdk.Duration.seconds(10),
       bundling: { externalModules: ['@aws-sdk/*'] },
-      environment: { DEVICE_BINDINGS_TABLE_NAME: this.deviceBindingsTable.tableName },
+      environment: {
+        DEVICE_BINDINGS_TABLE_NAME: this.deviceBindingsTable.tableName,
+        // P0-6: claim-device verifies the Pi's ECDSA proof against its registered cert.
+        PI_DEVICE_REGISTRY_TABLE_NAME: this.piDeviceRegistryTable.tableName,
+      },
     });
     this.deviceBindingsTable.grantReadWriteData(claimDeviceFn);
+    this.piDeviceRegistryTable.grantReadData(claimDeviceFn);
 
     // ── Lambda: AttestationFn — IoT Core MQTT → hardware attestation pipeline ─
     // Replaces FastAPI server + Mosquitto broker + attestation.py entirely.
