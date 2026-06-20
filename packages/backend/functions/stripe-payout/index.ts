@@ -58,7 +58,9 @@ async function verifyWalletOwnership(
   try {
     const pubBytes = bs58.decode(wallet);
     if (pubBytes.length !== 32) return false;
-    const msg = new TextEncoder().encode(`VIGIA-BALANCE:${wallet}:${tsMs}`);
+    // P0-3 fix: domain-separated from the balance-read proof (VIGIA-BALANCE). A proof
+    // captured from a balance poll can no longer authorize money movement.
+    const msg = new TextEncoder().encode(`VIGIA-PAYOUT:${wallet}:${tsMs}`);
     return nacl.sign.detached.verify(msg, bs58.decode(sig), pubBytes);
   } catch { return false; }
 }
@@ -119,28 +121,29 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const amountCents = Math.floor((pendingMicro / 1_000_000) * VGA_TO_USD_CENTS);
     if (amountCents < 100) return err(400, 'Minimum payout is 1.00 USD');
 
-    // P0-4 fix: atomically debit the claimed balance BEFORE any money moves. The
-    // conditional update fails if a concurrent or replayed payout already drained
-    // it, so the same balance can never be cashed out twice.
+    // Signed-request timestamp — reused for the idempotency key (P0-4) and as a
+    // monotonic single-use guard (P0-3).
+    const proofTs    = event.headers['x-wallet-timestamp'] ?? event.headers['X-Wallet-Timestamp'] ?? '';
+    const proofTsNum = Number(proofTs);
+
+    // P0-4 + P0-3 fix: atomically debit the claimed balance BEFORE any money moves,
+    // AND require a strictly-increasing payout timestamp. The first condition stops
+    // double-spend of the same balance; the second makes each signed payout proof
+    // single-use (a replayed proof reuses its ts and fails last_payout_ts < :pts).
     try {
       await dynamo.send(new UpdateCommand({
         TableName: REWARDS_TABLE,
         Key: { wallet_address: wallet },
-        UpdateExpression:    'ADD pending_balance :neg, paid_out_total :claim',
-        ConditionExpression: 'pending_balance >= :claim',
-        ExpressionAttributeValues: { ':neg': -pendingMicro, ':claim': pendingMicro },
+        UpdateExpression:    'ADD pending_balance :neg, paid_out_total :claim SET last_payout_ts = :pts',
+        ConditionExpression: 'pending_balance >= :claim AND (attribute_not_exists(last_payout_ts) OR last_payout_ts < :pts)',
+        ExpressionAttributeValues: { ':neg': -pendingMicro, ':claim': pendingMicro, ':pts': proofTsNum },
       }));
     } catch (e: unknown) {
       if ((e as { name?: string }).name === 'ConditionalCheckFailedException') {
-        return err(409, 'Balance already claimed or changed — refresh and retry');
+        return err(409, 'Balance already claimed, changed, or proof replayed — refresh and retry');
       }
       throw e;
     }
-
-    // P0-4 fix: deterministic idempotency key bound to the signed request timestamp,
-    // so a retried/replayed request reuses the same PaymentIntent instead of
-    // creating a second fiat transfer.
-    const proofTs = event.headers['x-wallet-timestamp'] ?? event.headers['X-Wallet-Timestamp'] ?? '';
 
     try {
       const intent = await stripe.paymentIntents.create({
