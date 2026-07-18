@@ -12,6 +12,8 @@
 [![DynamoDB](https://img.shields.io/badge/DynamoDB-PAY--PER--REQUEST-4053D6?style=flat-square&logo=amazondynamodb&logoColor=white)](https://aws.amazon.com/dynamodb/)
 [![AWS IoT Core](https://img.shields.io/badge/AWS%20IoT%20Core-MQTT-1A9C3E?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/iot-core/)
 [![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Nova%20Lite-232F3E?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/bedrock/)
+
+**🏆 Global Finalist — Amazon AIdeas Hackathon 2026 ($10,000 prize track)**
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 </div>
