@@ -15,6 +15,35 @@ IDs: `A-CRIT-n`, `A-SEC-n`, `A-BUG-n`, `A-QUAL-n`, `A-AZ-n`. Severities P0/P1/P2
 
 ---
 
+## Review Reconciliation (v2.1 — cross-reviewed and verified against source, 2026-07-25)
+
+An independent second review (Codex) cross-checked this spec; every item was re-verified by reading the cited files. **Authoritative where it conflicts with the original findings.**
+
+### RETRACTED / REVISED
+
+- **A-SEC-5 (Stripe webhook) — RETRACTED (already implemented).** `stripe-webhook/index.ts:39` verifies `Stripe-Signature` via `stripe.webhooks.constructEvent` over the raw body and 400s unverified events. No action needed. However, the same file's `Number(intent.metadata?.micro_vga ?? '0')` (:49) shares the A-BUG-1 precision loss — folded into A-BUG-1.
+- **A-SEC-4 (IAM scope) — REFINED.** Valid, but Location is a v2 `geo-places` action: scope to `arn:aws:geo-places:<region>::provider/default`, not a legacy place-index ARN. Confirm against the AWS service-authorization reference at implementation.
+- **A-QUAL-1 (duplicate pipe) — RECLASSIFIED.** Deployed-state drift, not establishable from the repo; treat as an operational cleanup/verification item, not a code finding.
+- **A-SEC-2 (secret exposure) — BROADENED.** The runtime-fetch requirement applies to every injected secret, not only Sarvam — audit the Stripe secret-key injection the same way.
+
+### New CONFIRMED findings
+
+- **A-CRIT-1 — Sessions CRUD fully unauthenticated and trusts client identity/integrity (P0).** `session-stack.ts:104-110` attaches no authorizer to POST/GET/PUT/DELETE `/sessions`. `sessions/handler.ts` reads `data.userId/verifiedCount/contributorId` from the request body and derives `fileHash`/`parentHash` from client-supplied values; GET uses `queryStringParameters.userId`. Any caller can read/update/delete any user's sessions and forge the supposedly hash-chained ledger. Fix: Cognito authorizer on all routes; derive identity from JWT claims; reject client-supplied identity/integrity fields; condition every write on the authenticated owner.
+- **A-SEC-6 — claim-device wallet-uniqueness race (P1).** `claim-device/index.ts` reads the wallet GSI, then writes with a condition on `device_id` only. Two concurrent claims (same wallet, different devices) both observe an empty GSI and both succeed, breaking "one wallet, one device." Fix: a DynamoDB `TransactWriteItems` with a wallet-sentinel uniqueness item. *(The dual proof-of-possession — wallet_sig + device_sig — is correctly implemented; only the uniqueness enforcement is raceable.)*
+
+**Note on device binding:** the server side (`claim-device`) correctly requires both signatures; binding fails end-to-end because the *client* sends an empty device signature and the *Pi* has no sign-challenge command — see vigia2 M-CRIT-2 and vigia-raspi R-SEC-6/R-CRIT-6.
+
+### Revised priority (amazon)
+
+1. A-CRIT-1 Sessions lockdown.
+2. A-SEC-1 sarvam-proxy auth; A-SEC-2 runtime secrets (incl. Stripe).
+3. A-BUG-1 BigInt payout math (incl. webhook :49); A-SEC-6 transactional claim.
+4. A-SEC-3 CORS allow-list; A-SEC-4 IAM (provider ARN); remaining hardening.
+
+Removed from scope: A-SEC-5.
+
+---
+
 ## 1. Architecture recap (as-built, verified)
 
 ```
