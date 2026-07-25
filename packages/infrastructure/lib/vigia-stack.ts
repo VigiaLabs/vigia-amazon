@@ -26,8 +26,8 @@ export class VigiaStack extends cdk.Stack {
     // Zone 4: Trust Layer (DePIN Ledger)
     const trustStack = new TrustStack(this, 'Trust');
 
-    // MFS: Session Management
-    const sessionStack = new SessionStack(this, 'Session');
+    // MFS: Session Management — created after Enterprise so the session CRUD API
+    // can be gated by the shared Cognito user pool (A-CRIT-1). See below.
 
     // Zone 3: Intelligence Core - Create tables first (without hazards table)
     const intelligenceStack = new IntelligenceStack(this, 'Intelligence', {
@@ -108,6 +108,11 @@ export class VigiaStack extends cdk.Stack {
     // Enterprise Auth & DePIN Rewards
     const enterpriseStack = new EnterpriseStack(this, 'Enterprise', {
       hazardsTable: ingestionStack.hazardsTable,
+    });
+
+    // MFS: Session Management — gated by the Enterprise Cognito user pool (A-CRIT-1).
+    const sessionStack = new SessionStack(this, 'Session', {
+      userPool: enterpriseStack.userPool,
     });
 
     // Zone 5: Visualization Layer (Amazon Location Service)

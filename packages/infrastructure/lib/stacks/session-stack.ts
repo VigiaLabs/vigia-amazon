@@ -4,15 +4,21 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 import * as path from 'path';
+
+interface SessionStackProps {
+  /** A-CRIT-1: Cognito pool whose JWTs authorize the session CRUD routes. */
+  userPool: cognito.IUserPool;
+}
 
 export class SessionStack extends Construct {
   public readonly sessionFilesTable: dynamodb.Table;
   public readonly ledgerEntriesTable: dynamodb.Table;
   public readonly api: apigateway.RestApi;
 
-  constructor(scope: Construct, id: string) {
+  constructor(scope: Construct, id: string, props: SessionStackProps) {
     super(scope, id);
 
     // SessionFiles Table
@@ -99,18 +105,27 @@ export class SessionStack extends Construct {
       },
     });
 
+    // A-CRIT-1: all session CRUD + ledger validation require a valid Cognito JWT.
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'SessionAuthorizer', {
+      cognitoUserPools: [props.userPool],
+    });
+    const authOpts: apigateway.MethodOptions = {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    };
+
     // /sessions endpoint
     const sessions = this.api.root.addResource('sessions');
-    sessions.addMethod('POST', new apigateway.LambdaIntegration(sessionCrudFunction));
-    sessions.addMethod('GET', new apigateway.LambdaIntegration(sessionCrudFunction));
+    sessions.addMethod('POST', new apigateway.LambdaIntegration(sessionCrudFunction), authOpts);
+    sessions.addMethod('GET', new apigateway.LambdaIntegration(sessionCrudFunction), authOpts);
 
     const sessionItem = sessions.addResource('{sessionId}');
-    sessionItem.addMethod('GET', new apigateway.LambdaIntegration(sessionCrudFunction));
-    sessionItem.addMethod('PUT', new apigateway.LambdaIntegration(sessionCrudFunction));
-    sessionItem.addMethod('DELETE', new apigateway.LambdaIntegration(sessionCrudFunction));
+    sessionItem.addMethod('GET', new apigateway.LambdaIntegration(sessionCrudFunction), authOpts);
+    sessionItem.addMethod('PUT', new apigateway.LambdaIntegration(sessionCrudFunction), authOpts);
+    sessionItem.addMethod('DELETE', new apigateway.LambdaIntegration(sessionCrudFunction), authOpts);
 
     const validateEndpoint = sessionItem.addResource('validate');
-    validateEndpoint.addMethod('GET', new apigateway.LambdaIntegration(hashChainValidatorFunction));
+    validateEndpoint.addMethod('GET', new apigateway.LambdaIntegration(hashChainValidatorFunction), authOpts);
 
     // /geohash/resolve endpoint
     const geohash = this.api.root.addResource('geohash');
