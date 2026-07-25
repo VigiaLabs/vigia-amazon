@@ -1,164 +1,131 @@
-# VIGIA-AMAZON — Master Design Spec V2
+# VIGIA-AMAZON — Master Design Spec V2 (rev 2.2)
 
-**Status:** Active · supersedes everything in `docs/design/archive/` (`solana_design.md`, `solana_BME_design.md`, `solana_lambda_migration.md`, the old `README.md`) and the prior `archive/` dump at repo root.
-**Scope:** the cloud backend + VIGIA IDE — AWS Lambda functions, CDK infrastructure, the rewards/attestation pipeline, Solana protocol, and the road-infrastructure IDE frontend.
-**Audited:** 2026-07-25 against `main` (commit `b83c597`). Review + improvement spec only; nothing here is implemented yet.
-**Companion specs:** [vigia-raspi V2](../../../vigia-raspi/.claude/design/VIGIA_RASPI_V2.md), [vigia-public V2](../../vigia-public/docs/design/VIGIA_PUBLIC_V2.md), [vigia2 V2](../../../../AndroidStudioProjects/vigia2/docs/design/VIGIA2_V2.md).
-
----
-
-## 0. Reading guide
-
-IDs: `A-CRIT-n`, `A-SEC-n`, `A-BUG-n`, `A-QUAL-n`, `A-AZ-n`. Severities P0/P1/P2 as in the sibling specs. The prior security audit (S.1–S.9 in the archived raspi GAP_TRACKER) fixed the reward-farming, double-spend, Sybil, and slash-enforcement issues — those are **verified still-correct** here and not re-listed except where a residual remains.
-
-**The single biggest V2 decision (A-AZ-1):** the rewards + identity layer is Solana-coupled end-to-end. The IC-2027 narrative is *municipal SaaS + hardware-attested data integrity*, not DePIN tokens. This spec both hardens the current AWS/Solana system (so the pilot keeps running) **and** specifies the Azure-native replacement to migrate to in November. Both are in scope; do not conflate them.
+**Status:** Active, internally reconciled. Supersedes v2.0/v2.1 and everything in `docs/design/archive/`.
+**Scope:** cloud backend + VIGIA IDE — Lambda functions, CDK infra, rewards/attestation pipeline, Solana protocol, IDE frontend.
+**Audited against:** `main` + `fix/v2-p0-security@9981f0e`. Two independent cross-reviews (Codex ×2) + first-party source re-verification.
+**Companion specs:** [vigia-raspi V2](../../../vigia-raspi/.claude/design/VIGIA_RASPI_V2.md) · [vigia-public V2](../../vigia-public/docs/design/VIGIA_PUBLIC_V2.md) · [vigia2 V2](../../../../AndroidStudioProjects/vigia2/docs/design/VIGIA2_V2.md).
+**Cross-repo protocol findings** (identity/sequencing, pairing) are defined in [vigia-raspi V2 §5](../../../vigia-raspi/.claude/design/VIGIA_RASPI_V2.md) and referenced here as A-CRIT-3 / A-SEC-6.
 
 ---
 
-## Review Reconciliation (v2.1 — cross-reviewed and verified against source, 2026-07-25)
+## 0. How to read
 
-An independent second review (Codex) cross-checked this spec; every item was re-verified by reading the cited files. **Authoritative where it conflicts with the original findings.**
-
-### RETRACTED / REVISED
-
-- **A-SEC-5 (Stripe webhook) — RETRACTED (already implemented).** `stripe-webhook/index.ts:39` verifies `Stripe-Signature` via `stripe.webhooks.constructEvent` over the raw body and 400s unverified events. No action needed. However, the same file's `Number(intent.metadata?.micro_vga ?? '0')` (:49) shares the A-BUG-1 precision loss — folded into A-BUG-1.
-- **A-SEC-4 (IAM scope) — REFINED.** Valid, but Location is a v2 `geo-places` action: scope to `arn:aws:geo-places:<region>::provider/default`, not a legacy place-index ARN. Confirm against the AWS service-authorization reference at implementation.
-- **A-QUAL-1 (duplicate pipe) — RECLASSIFIED.** Deployed-state drift, not establishable from the repo; treat as an operational cleanup/verification item, not a code finding.
-- **A-SEC-2 (secret exposure) — BROADENED.** The runtime-fetch requirement applies to every injected secret, not only Sarvam — audit the Stripe secret-key injection the same way.
-
-### New CONFIRMED findings
-
-- **A-CRIT-1 — Sessions CRUD fully unauthenticated and trusts client identity/integrity (P0).** `session-stack.ts:104-110` attaches no authorizer to POST/GET/PUT/DELETE `/sessions`. `sessions/handler.ts` reads `data.userId/verifiedCount/contributorId` from the request body and derives `fileHash`/`parentHash` from client-supplied values; GET uses `queryStringParameters.userId`. Any caller can read/update/delete any user's sessions and forge the supposedly hash-chained ledger. Fix: Cognito authorizer on all routes; derive identity from JWT claims; reject client-supplied identity/integrity fields; condition every write on the authenticated owner.
-- **A-SEC-6 — claim-device wallet-uniqueness race (P1).** `claim-device/index.ts` reads the wallet GSI, then writes with a condition on `device_id` only. Two concurrent claims (same wallet, different devices) both observe an empty GSI and both succeed, breaking "one wallet, one device." Fix: a DynamoDB `TransactWriteItems` with a wallet-sentinel uniqueness item. *(The dual proof-of-possession — wallet_sig + device_sig — is correctly implemented; only the uniqueness enforcement is raceable.)*
-
-**Note on device binding:** the server side (`claim-device`) correctly requires both signatures; binding fails end-to-end because the *client* sends an empty device signature and the *Pi* has no sign-challenge command — see vigia2 M-CRIT-2 and vigia-raspi R-SEC-6/R-CRIT-6.
-
-### Revised priority (amazon)
-
-1. A-CRIT-1 Sessions lockdown.
-2. A-SEC-1 sarvam-proxy auth; A-SEC-2 runtime secrets (incl. Stripe).
-3. A-BUG-1 BigInt payout math (incl. webhook :49); A-SEC-6 transactional claim.
-4. A-SEC-3 CORS allow-list; A-SEC-4 IAM (provider ARN); remaining hardening.
-
-Removed from scope: A-SEC-5.
+**Finding status:** `OPEN` · `IMPLEMENTED` · `IMPLEMENTED-PARTIAL` · `RETRACTED` · `SUPERSEDED` · `RECLASSIFIED` · `CLOSED` (already-correct). A finding appears once, with one status.
+**Severity:** `P0` · `P1` · `P2`. OPEN/PARTIAL findings carry file:line · failure · fix · **acceptance** · deps. Resolved items (§6) are not scheduled. The status matrix (§1) is authoritative.
 
 ---
 
-## 1. Architecture recap (as-built, verified)
+## 1. Implementation status matrix (keyed by branch@commit)
+
+| ID | Title | Sev | Status | Where |
+|----|-------|-----|--------|-------|
+| A-CRIT-1 | Sessions CRUD unauthenticated / owner-spoofable | P0 | IMPLEMENTED | `fix/v2-p0-security@9981f0e` (auth + ownership only; **integrity split to A-CRIT-2**) |
+| A-CRIT-2 | Session ledger invalid by construction | P0 | OPEN | new; hash-chain + transactionality |
+| A-CRIT-3 | Canonical device id + QoS1-safe idempotency | P0 | OPEN | cross-repo, see raspi §5.1 |
+| A-SEC-1 | sarvam-proxy unauthenticated (open billable) | P0 | OPEN | + Express engine, see public spec |
+| A-SEC-2 | Injected secret in Lambda env config | P1 | OPEN | rationale corrected below |
+| A-SEC-3 | Wildcard CORS on money/identity routes | P1 | OPEN | — |
+| A-SEC-4 | Wildcard IAM (Location/Bedrock) | P1 | OPEN | correct ARN below |
+| A-SEC-6 | claim-device race + phone-key delegation | P1 | OPEN | cross-repo, see raspi §5.2 |
+| A-BUG-1 | Payout number precision + fixed-point money | P1 | OPEN | includes webhook :49 |
+| A-QUAL-2..7 | Hardening batch | P2 | OPEN | see §3 |
+| A-QUAL-8 | cdk CLI schema 53 < library 54 | P2 | OPEN | tooling; blocks `cdk synth` |
+| A-SEC-5 | Stripe webhook signature verify | — | CLOSED | already implemented; §6 |
+| A-QUAL-1 | Legacy duplicate EventBridge pipe | — | RECLASSIFIED | operational drift; §6 |
+
+Verified-correct and retained: `tryCreditReward` atomic transaction; Ed25519 PoP on `register-device`; blacklist enforcement in `ValidatorFn`; attestation verifies signature before advancing sequence; `stripe-payout` domain-separated proof + atomic pre-debit + idempotency key + re-credit-on-failure; API GW request-model range validation.
+
+---
+
+## 2. Architecture recap (as-built)
 
 ```
-Pi (mTLS) ─► AWS IoT Core ─Rule─► AttestationFn ─┬─ ECDSA P-256 verify (@noble/curves)
-                                                 ├─ DynamoDB anti-replay (conditional write)
-                                                 ├─ H3 res-10 geo-dedup ─► HazardsTable
-                                                 └─ AttestationLogTable
-Android (Ed25519) ─API GW─► ValidatorFn ─► HazardsTable
-DynamoDB Streams ─► OrchestratorFn ─┬─ 2% VLM sample (Bedrock Nova-Lite) ─► Bedrock Agent (ReAct)
-                                    └─ 98% fast path ─► tryCreditReward (atomic dedup+balance+ledger)
-                                                          └─ slash-node ─► Solana + blacklist
-register-device (Ed25519 PoP) ─► DeviceRegistry     stripe-payout (wallet proof) ─► Stripe Connect
-sarvam-proxy (STT/TTS)     rewards-balance (wallet proof)     IDE frontend (Next.js) + diff/branch workers
+Pi (mTLS) → IoT Core →Rule→ AttestationFn (ECDSA verify, anti-replay, H3 dedup) → HazardsTable + AttestationLog
+Android (Ed25519) →APIGW→ ValidatorFn → HazardsTable
+Streams → OrchestratorFn: 2% VLM (Nova-Lite) → Bedrock Agent; 98% fast path → tryCreditReward → slash-node (Solana + blacklist)
+register-device (Ed25519 PoP) · claim-device (dual PoP) · stripe-payout/webhook (wallet proof) · sarvam-proxy · rewards-balance
+Sessions CRUD + ledger validator · geohash/places (Location) · IDE frontend (Next.js) + diff/branch workers
 ```
 
-Verified-correct (keep): `tryCreditReward` atomic transaction (S.1/S.2), Ed25519 proof-of-possession on `register-device` (S.3), blacklist enforcement in `ValidatorFn` (S.4), attestation verifies signature before advancing sequence (S.5), `stripe-payout` domain-separated proof + atomic pre-debit + idempotency key + re-credit-on-failure (a genuinely well-built function), API GW request-model validation with range checks.
+---
+
+## 3. Open findings
+
+### A-CRIT-2 — Session ledger is invalid by construction (P0, OPEN)
+**Files:** `packages/backend/src/sessions/handler.ts`, `packages/backend/src/ledger/validator.ts:23-85`.
+**Failure (multiple, compounding):**
+- **Chain semantics wrong.** Creation passes the *session file hash* as `previousHash`; the validator expects the first entry to be `genesis`; updates pass the session's `fileHash`, not the preceding ledger entry's `currentHash`. The chain does not actually link.
+- **PUT does not recompute `fileHash`.** It mutates `verifiedCount`/`status` only, so the stored file hash no longer matches the record (the A-CRIT-1 comment claiming integrity fields are recomputed is accurate only for POST).
+- **Content still caller-controlled.** `verifiedCount`, `hazardCount`, timestamp, geohash, status, hazards, metadata are client-supplied and feed the hash — so the "chain" attests attacker-chosen content.
+- **Not transactional.** Session write and ledger write are separate `PutCommand`s; a ledger failure leaves a mutated session with no audit record. Concurrent PUTs read the same prior state and fork the history. DELETE writes no tombstone.
+- **Validator is broken + leaky.** It queries a single global partition `ledgerId = 'ledger'` (hot partition; no owner scope), filters by session client-side, stops at DynamoDB's page limit (can falsely report truncated history as valid), is vulnerable to same-millisecond sort-key collisions, and leaks `error.message` at :85.
+**Fix (redesign):** partition ledger by `ownerSub#sessionId`; monotonic version or ULID sort key; `TransactWriteItems` for the session mutation + ledger entry together, conditioned on the expected prior version/hash; derive `verifiedCount`/hashes server-side; record deletion as a tombstone; validator queries the session partition directly, walks the whole chain, scopes to the authenticated owner, and returns generic errors.
+**Acceptance:** tests for update/delete concurrency, chain continuity across paginated history, tamper detection, tombstoned deletes, and owner-scoped validation. This is a **separate P0 from A-CRIT-1** — A-CRIT-1 is not "fully closed" until this lands.
+**Depends on:** A-CRIT-1 (auth/ownership, done).
+
+### A-SEC-1 — sarvam-proxy is an open, billable endpoint (P0, OPEN)
+**Files:** `functions/sarvam-proxy/index.ts` (no JWT check); `infrastructure/lib/stacks/ingestion-stack.ts` (`/sarvam-proxy/*` has no authorizer, only `reservedConcurrentExecutions: 10`). Also the standalone Express engine exposes `/sarvam-proxy/stt|tts` unauthenticated ([vigia-public server/index.ts](../../vigia-public/docs/design/VIGIA_PUBLIC_V2.md)).
+**Failure:** anyone can drain the Sarvam key's paid quota; the header comment claiming "Cognito JWT required" is false.
+**Fix:** attach the existing `CognitoUserPoolsAuthorizer` to both proxy methods + defensive in-handler `aud`/`exp` check; per-user usage-plan throttling; do the same on the Express engine. Update the misleading comment.
+**Acceptance:** unauthenticated call → 401; authenticated call within quota → 200; load test shows quota bounded per user.
+
+### A-SEC-2 — Injected secret readable via Lambda function config (P1, OPEN — rationale corrected)
+**File:** `ingestion-stack.ts` `SARVAM_API_KEY: sarvamSecret.secretValue.unsafeUnwrap()`.
+**Correction:** `unsafeUnwrap()` on a `fromSecretNameV2` secret emits a CloudFormation **dynamic reference** (`{{resolve:secretsmanager:…}}`) that resolves at *deploy* time — it does **not** embed plaintext in the synthesized template. The real problem is that the resolved secret lands in the Lambda's **environment configuration**, readable by anyone with `lambda:GetFunctionConfiguration`.
+**Fix:** fetch the secret at runtime via `GetSecretValue` (cache in the execution context) or the Lambda Secrets extension; least-privilege IAM to the specific secret ARN; rotate after the change. Apply to **all** injected secrets, including the Stripe secret key — not only Sarvam.
+**Acceptance:** no resolved secret in any Lambda env var; `GetFunctionConfiguration` reveals no key material; function still authenticates to Sarvam/Stripe.
+
+### A-SEC-3 — Wildcard CORS on money/identity routes (P1, OPEN)
+`register-device`, `sarvam-proxy`, `stripe-payout`, `rewards-balance` return `Access-Control-Allow-Origin: *`; `ingestion-stack`/`session-stack` use `Cors.ALL_ORIGINS`. Signature proofs mitigate CSRF on the mutating ones, but `rewards-balance` leaking any wallet's balance cross-origin is still open. **Fix:** allow-list the known frontends; keep `*` only on genuinely non-credentialed reads and document why. **Acceptance:** cross-origin script from an unlisted origin is blocked by the browser for credentialed routes.
+
+### A-SEC-4 — Wildcard IAM (P1, OPEN — correct ARN)
+`session-stack.ts:76,137` grant `geo-places:*` on `*`; Bedrock policy in `intelligence-stack` is `*`. **Fix:** scope Location v2 actions to `arn:aws:geo-places:<region>::provider/default` (the v2 `provider` resource type — **not** a legacy place-index ARN); scope Bedrock to the exact model + agent-alias ARNs. **Acceptance:** each role's policy names specific resource ARNs; deploy still functions.
+
+### A-SEC-6 — claim-device race + phone-key delegation (P1, OPEN)
+**File:** `functions/claim-device/index.ts`. **(a) Race:** wallet-uniqueness is a GSI read followed by a `Put` conditioned on `device_id` only; two concurrent claims (same wallet, different devices) both pass. Fix with `TransactWriteItems` + a wallet-sentinel item. **(b) Key hierarchy:** the claim binds wallet↔device but never binds/delegates the Android BLE P-256 key, which the Pi needs for its allow-list — see [raspi §5.2](../../../vigia-raspi/.claude/design/VIGIA_RASPI_V2.md). The dual PoP (wallet_sig + device_sig) is correctly implemented; the gaps are the race and the missing delegation. **Acceptance:** concurrent distinct-device claims for one wallet → exactly one succeeds; claim record carries a wallet→phone delegation the Pi can consume.
+
+### A-BUG-1 — Money math precision (P1, OPEN — refined)
+**Files:** `stripe-payout/index.ts:117` (`Number(BigInt(...))`), `stripe-webhook/index.ts:49` (`Number(intent.metadata?.micro_vga ?? '0')`).
+**Failure:** micro-VGA balances coerced to JS `Number` lose precision above 2^53; the payout condition is checked in BigInt but debited as the lossy Number, so the ledger can drift. **Refinement (Codex):** also handle DynamoDB number **deserialization** before `BigInt`, and use **fixed-point/rational** conversion for the USD rate rather than `BigInt()` on a possibly-fractional rate. **Fix:** keep the whole payout path in integer/BigInt; `(pendingMicro * rateNumerator) / rateDenominator`; cross to `Number` only at the Stripe integer-cents boundary. **Acceptance:** unit test at 2^53+1 micro-VGA and a fractional rate; ledger balances exactly.
+
+### A-QUAL-2..8 (P2, OPEN)
+`VLM_SAMPLE_RATE` as an explicit CDK env var (A-QUAL-2); schema-constrain orchestrator prompt interpolation (A-QUAL-3); assert `slash-node` is never API-routed (A-QUAL-4); fail-fast on empty `LOCATION_API_KEY` (A-QUAL-5); consolidate the two `verify-hazard-sync` variants (A-QUAL-6); no-PII/secret logging lint (A-QUAL-7); **upgrade the CDK CLI to ≥ 2.1128.0** — current CLI supports cloud-assembly schema 53 while the library emits schema 54, so `cdk synth` fails (A-QUAL-8).
 
 ---
 
-## 2. P0 — Critical findings
+## 5. Cross-repo protocol findings
 
-### A-SEC-1 — `sarvam-proxy` has no authentication in code; the "Cognito JWT required" claim is false
-**File:** `packages/backend/functions/sarvam-proxy/index.ts:32-123` (handler never inspects `Authorization`); `packages/infrastructure/lib/stacks/ingestion-stack.ts:411-436` (no authorizer attached to `/sarvam-proxy/*`).
-**Failure:** the file header says *"Caller must be authenticated (Cognito JWT via Authorization header) so the proxy cannot be abused by anonymous callers"* — but nothing validates the JWT, and the route has **no API Gateway authorizer**. The only guard is `reservedConcurrentExecutions: 10` (a comment even admits it's a stopgap "until the Cognito authorizer lands"). Anyone on the internet can call `/sarvam-proxy/stt|tts` and burn the Sarvam key's paid quota (bounded only by concurrency). This is an open, billable proxy.
-**V2 fix:** attach the existing `CognitoUserPoolsAuthorizer` (already built in `enterprise-stack.ts:126`) to both `/sarvam-proxy` methods, and defensively re-verify the JWT `aud`/`exp` in-handler. Add per-user usage-plan throttling. Update the header comment to match reality once fixed.
-
-### A-SEC-2 — Sarvam secret is baked into the Lambda env as plaintext via `unsafeUnwrap()`
-**File:** `packages/infrastructure/lib/stacks/ingestion-stack.ts:419-423` — `SARVAM_API_KEY: sarvamSecret.secretValue.unsafeUnwrap()`.
-**Failure:** `unsafeUnwrap()` resolves the secret at **synth time** and writes it into the CloudFormation template and the Lambda's environment variables. Anyone with `lambda:GetFunctionConfiguration`, CloudFormation read, or template access sees the key in cleartext — it also lands in CloudTrail/console. This defeats the purpose of Secrets Manager. (Note the Fargate stack does this correctly via `ecs.Secret` — see `infrastructure/cdk/fargate-stack.ts`.)
-**V2 fix:** fetch the secret at **runtime** with `GetSecretValue` (cache in the execution context), or use the Lambda "secrets from Secrets Manager" env integration / extension. Never `unsafeUnwrap()` into env. Rotate the key after this change (assume the current one is exposed).
-
-### A-BUG-1 — Reward balance precision loss above 2^53 (`Number(BigInt(...))`)
-**File:** `packages/backend/functions/stripe-payout/index.ts:117` — `const pendingMicro = Number(BigInt(item.pending_balance?.toString() ?? '0'))`.
-**Failure:** micro-VGA (1e-6 VGA) balances are stored/compared as BigInt for correctness, then coerced to a JS `Number` for the payout math. Above 2^53 micro-VGA (~9.007e9 VGA) the conversion silently loses precision — a user could be paid slightly more or less than owed, and the DynamoDB conditional (`pending_balance >= :claim`) is checked in BigInt but the debit `:neg = -pendingMicro` is the lossy Number, so the ledger can drift. Low likelihood at pilot scale, but it is a money-handling correctness bug and exactly the kind of thing a technical review pokes at.
-**V2 fix:** keep the entire payout path in BigInt; convert to USD cents with integer math (`(pendingMicro * BigInt(vgaToUsdCents)) / 1_000_000n`) and only cross to Number at the Stripe API boundary (which itself takes integer cents). Add a unit test at 2^53+1.
+- **A-CRIT-3** = canonical device identity + reboot/QoS1-safe idempotent sequencing. Cloud side: the attestation/validator path must accept `(deviceId, bootEpoch, sequence, payloadHash)` idempotently (QoS-1 redelivery credited once), reject the same tuple with a different payloadHash, reject old sequences within an epoch, reject reused/revoked boot epochs, and maintain a used-epoch registry. Full spec in [raspi §5.1](../../../vigia-raspi/.claude/design/VIGIA_RASPI_V2.md).
+- **A-SEC-6 delegation** = the claim record must carry the wallet→Android-BLE-key delegation. Full spec in [raspi §5.2](../../../vigia-raspi/.claude/design/VIGIA_RASPI_V2.md).
 
 ---
 
-## 3. P1 — High findings
+## 6. Resolved / retracted / reclassified (not scheduled)
 
-### A-SEC-3 — CORS `*` on money/identity endpoints
-**Files:** `register-device/index.ts:15`, `sarvam-proxy/index.ts:23`, `stripe-payout/index.ts:36`, `rewards-balance` — all `Access-Control-Allow-Origin: *`. Also `ingestion-stack.ts:311` and `session-stack.ts` use `Cors.ALL_ORIGINS`.
-**Failure:** wildcard CORS on endpoints that move money or expose balances. The signature-proof headers (`X-Wallet-*`) mitigate CSRF for the mutating ones, but `*` still lets any origin script the API on behalf of a tricked user and broadens the abuse surface. `rewards-balance` leaking any wallet's balance cross-origin was flagged as A.7 in the archived audit and is still open.
-**V2 fix:** replace `*` with an allow-list of the known frontends (IDE, app web, landing). For endpoints that must stay public, keep `*` only on genuinely non-credentialed reads and document why.
-
-### A-SEC-4 — IAM `resources: ['*']` on Location + (per archived A.8) Bedrock
-**Files:** `session-stack.ts:76` and `:137` (`geo-places:*` on `*`); Bedrock policy in `intelligence-stack.ts` (archived A.8).
-**Failure:** over-broad IAM. A compromised Location/Bedrock Lambda can call those services against any resource in the account.
-**V2 fix:** scope Location actions to the specific place-index ARNs; scope Bedrock to the exact model + agent ARNs (`arn:aws:bedrock:...:foundation-model/amazon.nova-lite-v1:0`, the agent alias ARN). Least-privilege per function role.
-
-### A-SEC-5 — Verify Stripe webhook signature
-**File:** `packages/backend/functions/stripe-webhook/index.ts` (83 lines — flagged for verification during audit).
-**Failure/риск:** if the webhook handler does not call `stripe.webhooks.constructEvent` with the signing secret, an attacker can POST forged `payout.paid` / `account.updated` events to manipulate payout state. Must confirm.
-**V2 fix:** verify `Stripe-Signature` against `STRIPE_WEBHOOK_SECRET` (Secrets Manager, runtime-fetched) before processing any event; reject unverified. Idempotency on `event.id`.
-
-### A-BUG-2 — `register-device` proof binds to the address, not to a fresh challenge (replay window)
-**File:** `packages/backend/functions/register-device/index.ts:41-45` — signs `VIGIA-REGISTER:<device_address>` with no timestamp/nonce.
-**Failure:** the proof-of-possession message is static per device, so a captured registration signature is replayable forever. Registration is idempotent (conditional write), so the practical impact is low — but a captured proof could be used to (re)assert control semantics if the record is ever deleted/reset. Contrast `stripe-payout`/`rewards-balance`, which correctly bind `:timestamp`.
-**V2 fix:** include a timestamp in the signed message (`VIGIA-REGISTER:<addr>:<tsMs>`) with a ±5-min freshness window, matching the payout/balance pattern. Coordinate with the Android `WalletRepositoryImpl` signer (which currently signs the static form).
-
-### A-QUAL-1 — Legacy duplicate EventBridge pipe still double-invokes the orchestrator (S.9)
-**Failure:** `vigia-hazards-to-orchestrator` is a third stream consumer that double-invokes the orchestrator (double VLM spend, double reward-credit attempts — the latter is saved only by `tryCreditReward` dedup). Archived audit S.9 left it open pending manual deletion.
-**V2 fix:** `aws pipes delete-pipe --name vigia-hazards-to-orchestrator`; codify the single-consumer topology in CDK so it can't drift back.
+- **A-SEC-5 — CLOSED (already implemented).** `stripe-webhook/index.ts:39` verifies `Stripe-Signature` via `constructEvent` over the raw body and 400s unverified events; refund reconciliation is idempotent. (Its `Number()` at :49 is tracked under A-BUG-1, not here.)
+- **A-QUAL-1 — RECLASSIFIED.** The legacy duplicate EventBridge pipe is deploy-state drift, not establishable from the repo; operational cleanup/verification item only.
 
 ---
 
-## 4. P2 — Quality / hardening
+## 7. Priority-ordered work plan (OPEN/PARTIAL only)
 
-- **A-QUAL-2** — `VLM_SAMPLE_RATE` relies on a code default (0.02) and is not a CDK env var (archived A.9); make it an explicit, tunable env var so sampling can be raised for the demo without a code change.
-- **A-QUAL-3** — `orchestrator/index.ts` prompt construction (`invokeAgent`, line 67-86) interpolates `hazardType`/`geohash`/`vlmReasoning` into the agent prompt; ensure these are schema-constrained enums / numeric before interpolation (prompt-injection hygiene, even though inputs are internal today).
-- **A-QUAL-4** — `slash-node` is an internal async invoke with no caller auth; confirm it is **never** wired to an API Gateway route (a slashing endpoint reachable externally would be catastrophic). Add an assertion/test on the CDK topology.
-- **A-QUAL-5** — `LOCATION_API_KEY: process.env.LOCATION_API_KEY || ''` (`session-stack.ts:126`) ships an empty key silently; fail fast at deploy if unset, or fetch from Secrets Manager.
-- **A-QUAL-6** — Consolidate the two verify-hazard-sync variants (`index.ts` + `index-streaming.ts`, 400 lines) — dead/duplicate code risk; keep one.
-- **A-QUAL-7** — Structured logging + no PII/secret in logs across all handlers (spot-checked OK, but make it a lint rule).
-
----
-
-## 5. Azure-native migration (November window)
-
-### A-AZ-1 — Rewards + identity: Solana → Azure Confidential Ledger + Cosmos DB + UPI
-The central V2 move. Property-for-property mapping (see roadmap §5):
-
-| Today (AWS + Solana) | Azure-native V2 |
-|---|---|
-| `register-device` Ed25519 PoP → DeviceRegistry (DynamoDB) | Same crypto, Azure Function; device identity via **IoT Hub DPS X.509** (ATECC608). Add timestamp per A-BUG-2. |
-| `tryCreditReward` DynamoDB TransactWrite | **Cosmos DB transactional batch** — near-mechanical port of the atomic dedup+balance+ledger pattern. |
-| Solana ledger entries | **Azure Confidential Ledger** (TEE-backed, append-only, cryptographic receipts): `{device_id, event_hash, ISS, amount, ts}`; receipt surfaced to the app so any driver/auditor verifies independently. |
-| `slash-node` on-chain slash | Validator Function writes a negative ACL entry + flips `blacklisted` (keep the existing enforcement). |
-| Token payout via Stripe Connect | **UPI payouts** (Razorpay/Cashfree Payouts Function). A driver can spend UPI; not a token. Delete the empty Stripe stubs on the client. |
-
-**Policy-weighted rewards (the upgrade):** first-discovery > re-confirmation; never-scanned rural km > redundant highway passes; work-order-filed → completion bonus on verified repair. Wire `lib/costCalculator.ts` (repair cost / prevented damage / ROI) into the credit amount so rewards become a data-acquisition policy instrument. Every step auditable in ACL.
-**Note:** ACL is an *integrity* service, not an AI service — it does **not** count toward the IC "2+ Microsoft AI services" requirement (Foundry Local, Foundry agents, Azure OpenAI, Azure AI Speech, IoT Hub cover that). ACL wins the security narrative + technical review.
-
-### A-AZ-2 — Bedrock → Azure OpenAI (three surfaces, not one)
-Bedrock is load-bearing in (a) `orchestrator` VLM sampling (Nova-Lite), (b) the Bedrock ReAct Agent, (c) — cross-repo — the vigia-public search engine. Port (a)→Azure OpenAI vision, (b)→Foundry Agent Service, keep AWS running until 2 clean dual-run weeks. See [vigia-public V2 §P-AZ](../../vigia-public/docs/design/VIGIA_PUBLIC_V2.md).
-
-### A-AZ-3 — Frame-hash validation (H2, cross-repo)
-`ValidatorFn` / `AttestationFn` must recompute `sha256(frame)` and compare against the signed value once the edge + Android signers include it. See [vigia-raspi V2 R-SEC-4](../../../vigia-raspi/.claude/design/VIGIA_RASPI_V2.md).
-
-### A-AZ-4 — IDE (frontend) forward work
-The road-infrastructure IDE (Next.js frontend + diff/branch web workers) is out of the critical security path but is the "design road infrastructure" demo surface. V2: ensure its agent calls route through the same Azure OpenAI/Foundry endpoints, and that its map/diff data reads carry the same auth as the rest.
+1. **A-CRIT-2** ledger redesign (transactional, owner-partitioned, server-derived) — do **before** calling A-CRIT-1 fully closed.
+2. **A-CRIT-3** canonical id + QoS1 idempotency (cross-repo; cloud side).
+3. **A-SEC-1** sarvam-proxy + Express auth.
+4. **A-SEC-2** runtime secrets (Sarvam + Stripe); **A-BUG-1** money math.
+5. **A-SEC-6** transactional claim + delegation; **A-SEC-3** CORS; **A-SEC-4** IAM.
+6. **A-QUAL-2..8** hardening (incl. CDK CLI upgrade to unblock `cdk synth`).
 
 ---
 
-## 6. Priority-ordered work plan
+## 8. Azure-native migration (November window)
 
-| Order | ID | Item | Effort |
-|---|---|---|---|
-| 1 | A-SEC-1 | Attach Cognito authorizer to sarvam-proxy + in-handler JWT check | ~0.5 d |
-| 2 | A-SEC-2 | Runtime secret fetch (kill unsafeUnwrap); rotate key | ~0.5 d |
-| 3 | A-SEC-5 | Stripe webhook signature verification | ~0.5 d |
-| 4 | A-BUG-1 | BigInt-clean payout math + test | ~0.5 d |
-| 5 | A-SEC-3/4 | CORS allow-list + IAM least-privilege | ~1 d |
-| 6 | A-BUG-2, A-QUAL-1 | Timestamped registration proof; delete duplicate pipe | ~0.5 d |
-| 7 | A-QUAL-2..7 | Hardening batch | ~1.5 d |
-| 8 | A-AZ-1..4 | Azure migration (Nov window) | see roadmap |
+- **A-AZ-1 — Rewards + identity: Solana → Azure Confidential Ledger + Cosmos DB + UPI.** Property-for-property port: `register-device` PoP (add timestamp per A-SEC-6) → Azure Function + DPS X.509 identity; `tryCreditReward` → Cosmos transactional batch; Solana ledger → Confidential Ledger receipts; slash → negative ACL entry + blacklist; Stripe → UPI payouts. Policy-weighted rewards via `costCalculator` ROI. ACL is an integrity service, **not** an AI service — it does not count toward the IC "2+ AI services" requirement.
+- **A-AZ-2 — Bedrock → Azure OpenAI (3 surfaces):** orchestrator VLM, Bedrock ReAct Agent, and the vigia-public search engine. Dual-run until parity.
+- **A-AZ-3 — frame-hash validation** once the edge/Android signers include it — but see the [raspi R-SEC-4 re-scope](../../../vigia-raspi/.claude/design/VIGIA_RASPI_V2.md): it needs the uploaded hashed artifact + a Pi-side signature, not the Pico.
+- **A-AZ-4 — IDE** agent calls route through the same Azure OpenAI/Foundry endpoints with consistent auth.
 
-**Definition of done for V2:** no open/unauthenticated billable endpoint; no secret in any template or env var; all money math in BigInt with tests; least-privilege IAM; and (post-migration) the rewards ledger demonstrably tamper-evident via Confidential Ledger receipts the driver can verify.
+---
+
+## Appendix — verification method
+Re-verified by reading cited files at `fix/v2-p0-security@9981f0e` / `design/v2-specs`. Backend build + 23 tests pass (incl. new ownership tests); tests do **not** yet cover update/delete concurrency, schema validation, ledger atomicity, or chain validation (A-CRIT-2). `cdk synth` blocked by the CLI/library schema mismatch (A-QUAL-8), not by these changes.
