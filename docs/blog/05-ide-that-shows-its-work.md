@@ -33,3 +33,40 @@ The analytical layer could have been a dashboard that hands you conclusions. Bui
 The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/VigiaLabs/vigia-amazon).
 
 *Engineering RoadIntelligence IDE · Episode 5 of 5 — Previous: Episode 4. Back to the series overview.*
+
+---
+
+## 🎓 CS Fundamentals — study companion
+
+*This finale is **System Design** (agent orchestration, workflow state machines, streaming) plus **Product/HCI design** (transparency & explainability) and an **observability** callback. "Design an agentic / explainable AI system" is an increasingly common interview prompt.*
+
+### System Design — agent orchestration & workflows
+
+- **Router / dispatcher pattern.** A Bedrock **router** sends each question to the right specialist function (network intelligence, maintenance logistics, urban planner, economic metrics). This is the **API gateway / dispatcher** pattern applied to agents — one entry point fanning out to specialists.
+- **Workflow orchestration with a state machine.** The urban planner runs a multi-step plan (land cost → zone rules → path geometry) as a **Step Functions state machine**. A state machine makes a multi-step workflow **explicit, resumable, observable, and retryable per step** — vs burying the steps in imperative code where a failure is opaque. Know the term "orchestration (state machine) vs choreography (events)."
+- **Streaming results (SSE).** Agent reasoning is streamed to the IDE live (Server-Sent Events / a stream), rather than making the user wait for the final answer. Streaming = incremental delivery over a long-lived connection; the same reason ChatGPT types token-by-token.
+
+### Product / HCI design — explainability
+
+- **Transparency as a first-class feature.** The IDE streams *every reasoning step* (ReAct: tool call → observation → thought → verdict), not just the conclusion. For a system directing public-infrastructure money, an unexplained verdict is a liability — an operator must be able to reconstruct and defend it. This is **explainable AI (XAI)** and good product design: show your work.
+- **"IDE, not dashboard."** A dashboard shows conclusions (read-only); an IDE is a *workspace* you interrogate. The design choice reflects the user's real job — investigate and justify, not just glance.
+
+### Observability (callback)
+- **Traces as first-class objects.** Reasoning steps are written to a traces table, addressable per hazard and subscribable live. This is **distributed tracing / structured logging** applied to agent decisions — the same instinct as OpenTelemetry spans: make every consequential step inspectable. (The three pillars again: metrics, logs, **traces**.)
+
+**Interview Q&A.**
+1. *Orchestration vs choreography for a multi-step workflow?* → Central state machine (Step Functions) controls the steps (visible, resumable) vs services reacting to each other's events (decoupled, harder to trace). Trade control for coupling.
+2. *Why stream an LLM/agent's output (SSE)?* → Perceived latency (first token fast), progressive disclosure, ability to cancel; needs a long-lived connection.
+3. *What is explainable AI and why does it matter here?* → Surfacing the reasoning behind a decision; essential when decisions carry real-world (money/safety/legal) consequences and must be audited.
+4. *How would you make an AI system's decisions auditable?* → Persist the reasoning trace per decision as a queryable/streamable object (structured traces), tie it to the input and the verdict.
+
+### ⚖️ This vs That — the architecture decisions, and the roads not taken
+
+| Decision | Alternatives | Why this choice |
+|---|---|---|
+| **IDE that streams reasoning** | A read-only dashboard of conclusions | Operators direct real maintenance money; they must interrogate *why*, not just see *what*. A workspace with visible reasoning is auditable; a dashboard isn't. |
+| **Step Functions state machine (urban planner)** | Steps inline in one Lambda | Inline multi-step logic is opaque and non-resumable; a state machine makes each step observable, retryable, and restartable from failure. |
+| **Reasoning traces as first-class, per-hazard objects** | Log to stdout / hide behind the answer | Hidden reasoning can't be audited or debugged; a queryable/streamable trace turns the agent from an oracle into a tool you can trust. |
+| **Router → specialist functions** | One giant do-everything agent | A monolithic agent is hard to scale, secure, and reason about; specialists with a router are modular and independently improvable. |
+
+**The one to defend:** *visible reasoning vs a black-box answer.* In an AI product whose decisions carry real consequences, **the reasoning is as much the deliverable as the result** — making the agent's trace a first-class, streamed, auditable artifact is what lets a human trust and defend the decision. Transparency isn't a nice-to-have; it's the feature that makes the system usable at all.

@@ -37,3 +37,45 @@ Putting a filtered stream between ingestion and verification meant the front doo
 The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/VigiaLabs/vigia-amazon).
 
 *Engineering RoadIntelligence IDE · Episode 4 of 5 — Previous: Episode 3. Next: Episode 5, An IDE that shows its work.*
+
+---
+
+## 🎓 CS Fundamentals — study companion
+
+*This is the **distributed-systems / System Design** episode — event-driven architecture, change-data-capture, message queues, dead-letter queues, and least-privilege security. These are the backbone of modern backend interviews.*
+
+### System Design — event-driven architecture
+
+- **Decoupling via a message bus.** The ingest function and the verifier never call each other; a change to the hazard row *is* the message. This is **event-driven architecture (EDA)**: producers emit events, consumers react, neither holds a reference to the other. Benefits: independent scaling, failure isolation, elasticity; cost: eventual consistency and harder end-to-end tracing.
+- **Change Data Capture (CDC).** A **DynamoDB Stream** emits every row change (INSERT/MODIFY/REMOVE) as an event — this is CDC: turning a database's write log into a stream other systems consume. (Same idea as Postgres logical replication, Debezium, MySQL binlog.) The database becomes the source of events *for free*.
+- **Async fan-out & buffering.** The stream → EventBridge pipe delivers in batches, absorbing bursts (**backpressure**) so a spike at the front door doesn't overwhelm the verifier. The door just persists a `PENDING` fact and returns fast; the slow work happens off the request path.
+- **Dead-letter queues (DLQ).** Events that repeatedly fail land in a DLQ instead of blocking the pipeline or being lost — poison-message isolation. A must-know reliability pattern.
+- **The idempotency requirement returns.** Stream/queue delivery is **at-least-once**, so consumers can see duplicates → they must be idempotent (which the reward transaction already is, Ep 3). *At-least-once + idempotent consumer = effectively-once*, the standard way to get exactly-once semantics you can't truly have.
+
+### System Design — the filter that prevents an infinite loop
+
+- **The self-triggering loop.** The orchestrator *reads* hazard changes and *writes* hazard status. Its own write is another change event → it re-triggers itself → infinite loop. This is a classic **feedback loop / event storm** in EDA.
+- **Declarative event filtering.** The fix: the orchestrator's pipe is filtered to **INSERT only** (new hazards), so its own MODIFY writes are never delivered back. A second consumer (maintenance) filters to **MODIFY where status=VERIFIED**. Each consumer subscribes to exactly the events it wants — routing decided declaratively at the bus, not by defensive `if` checks in every consumer. **Content-based routing / message filtering** (an Enterprise Integration Pattern).
+
+### Security — least privilege
+
+- **Principle of least privilege (PoLP).** Each Lambda's IAM role grants only the specific tables/buckets/models it touches; a compromised function can't reach the rest. At the edge, each device's policy scopes it to its own topic. Minimising the **blast radius** of any single compromise is a core security-design principle.
+
+**Interview Q&A.**
+1. *What is event-driven architecture and its tradeoffs?* → Producers/consumers coupled only by events; +scaling/isolation, −eventual consistency, harder tracing/ordering.
+2. *What is Change Data Capture?* → Streaming a DB's change log as events (DynamoDB Streams, binlog, WAL); decouples readers from the write path.
+3. *How do you get exactly-once processing?* → You can't truly; use at-least-once delivery + idempotent consumers (+ dedup keys) = effectively-once.
+4. *What is a dead-letter queue for?* → Isolating repeatedly-failing (poison) messages so they don't block or vanish.
+5. *A consumer that reads and writes the same stream loops forever — fix it?* → Filter the subscription (e.g., INSERT-only) so its own writes aren't redelivered; content-based routing at the bus.
+6. *Explain least privilege and blast radius.* → Grant the minimum permissions; a breach of one component can't touch others.
+
+### ⚖️ This vs That — the architecture decisions, and the roads not taken
+
+| Decision | Alternatives | Why this choice |
+|---|---|---|
+| **Decouple via DB stream (CDC)** | Ingest calls the verifier directly (sync or async) | A direct call ties the door's latency/availability to the slow verifier and can't buffer bursts. A stream gives buffering, retries, a DLQ, and independent scaling for free. |
+| **Declarative pipe filters (INSERT-only, VERIFIED-only)** | A guard clause inside each consumer (`if event is my own, skip`) | Guard clauses are easy to forget and run per event; a filter at the bus is authoritative and stops the loop structurally. Each consumer gets exactly its slice. |
+| **Fast persist-and-return at the door** | Verify synchronously in the request | Synchronous verification (S3 + VLM + agent) would make ingestion latency hostage to the slowest judgement and back up under load. |
+| **Per-function least-privilege IAM** | One broad shared role | A shared role means one compromised function exposes everything; scoped roles shrink the blast radius. |
+
+**The one to defend:** *stream decoupling + declarative filtering.* The subtle senior point: when a component both reads and writes an event stream, **the subscription filter is the boundary that separates a pipeline from an infinite loop** — you break the cycle declaratively at the bus, not with defensive code in every consumer. And decoupling via CDC means the front door never waits on the AI.

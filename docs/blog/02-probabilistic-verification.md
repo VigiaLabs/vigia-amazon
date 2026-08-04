@@ -35,3 +35,41 @@ Verification is where the money is decided, so it is exactly where cost has to b
 The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/VigiaLabs/vigia-amazon).
 
 *Engineering RoadIntelligence IDE · Episode 2 of 5 — Previous: Episode 1. Next: Episode 3, Paying a reward is a database transaction.*
+
+---
+
+## 🎓 CS Fundamentals — study companion
+
+*This episode blends **System Design** (cost under adversarial load), **Security** (economic security — staking/slashing, denial-of-wallet), **Statistics** (sampling/probabilistic auditing), and **ML systems** (VLMs, ReAct agents).*
+
+### System Design — cost under an adversary
+
+- **Denial-of-Wallet (DoW).** In serverless, an attacker who can trigger expensive work can inflate *your* bill instead of taking you offline — the pay-per-use analogue of DDoS. Running a VLM on every submission means cost scales with fraud volume, which the attacker controls. The 2%/98% split **bounds** per-event cost so flooding raises the attacker's cost, not yours.
+- **Tiered processing (cheap-fast / expensive-slow).** 98% resolved by a cheap deterministic threshold on the edge model's confidence; 2% escalated to the pricey VLM + agent. This is the same pattern as a CDN cache (cheap hit / expensive origin) or a fast-path/slow-path CPU — spend the expensive resource only where the cheap one runs out.
+
+### Security — economic / crypto-economic
+
+- **Staking & slashing.** Contributors put up a stake; a submission judged a spoof (VLM confidence < 0.1) triggers a **slash** — the stake is cut and the device blacklisted. This makes cheating *costly*, aligning incentives without needing to inspect every event. It's the same mechanism proof-of-stake blockchains use to punish misbehaviour.
+- **Probabilistic auditing / random inspection.** You don't need to deeply check every submission to keep people honest — you need every submission to have a real *chance* of a deep check, with a painful penalty if it fails. Expected cost of cheating = P(audit) × penalty. Same logic as tax audits and QA sampling.
+
+### Statistics
+- **Sampling.** Inspecting a random 2% and extrapolating (plus deterrence) is statistical sampling — bounded cost, high confidence in aggregate, without a census.
+
+### Machine Learning (systems)
+- **VLM + ReAct agent.** A Vision-Language Model scores the frame with a rationale; a **ReAct** (Reason + Act) agent then loops *thought → tool call → observation → thought* (here: query nearby hazards, compute a score) to reach a verdict. ReAct is the dominant pattern for tool-using LLM agents — worth knowing by name.
+
+**Interview Q&A.**
+1. *What is Denial-of-Wallet and how do you defend against it?* → Attacker triggers expensive pay-per-use work to inflate your bill; defend by bounding/capping expensive work, rate-limiting, and making the cheap path handle the bulk.
+2. *How do you keep contributors honest without checking every submission?* → Random deep audits + a penalty (slashing/staking); expected cheating cost = P(caught) × penalty.
+3. *Design a verification system whose cost doesn't explode under attack.* → Deterministic cheap path for the clear majority, sampled expensive path for the ambiguous minority, economic penalty for detected fraud.
+4. *What is the ReAct agent pattern?* → Interleave reasoning with tool calls and observations until the agent reaches an answer.
+
+### ⚖️ This vs That — the architecture decisions, and the roads not taken
+
+| Decision | Alternatives | Why this choice |
+|---|---|---|
+| **Probabilistic verification (2% VLM)** | VLM every event; or trust the edge score for all | "VLM everything" is a denial-of-wallet vulnerability (cost scales with attacker volume). "Trust everything" has no deterrent against a lying device. Sampling + slashing gets the deterrent at bounded cost. |
+| **Deterministic fast path for 98%** | Re-run a cloud model on every event | The hardware-attested edge confidence is already a strong signal; re-deriving it per event pays twice for one judgement. |
+| **Slash + blacklist on spoof** | Just reject the bad event | Rejection alone leaves cheating free to retry. A stake penalty makes fraud *expensive*, which is what actually deters it. |
+
+**The one to defend:** *bounded/probabilistic cost vs exhaustive verification.* The mature answer optimises the **cost curve under adversarial load**, not the happy path: let cheap determinism handle the obvious, spend the expensive model on a random sample, and make detected fraud costly — so the attacker's expected cost stays high while your average cost stays low and *predictable*.

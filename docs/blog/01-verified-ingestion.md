@@ -41,3 +41,47 @@ The entry point's whole job is to be adversarial about its input. Match the cryp
 The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/VigiaLabs/vigia-amazon).
 
 *Engineering RoadIntelligence IDE · Episode 1 of 5 — Next: Episode 2, Why the expensive AI only sees 2% of events.*
+
+---
+
+## 🎓 CS Fundamentals — study companion
+
+*This is the **Cryptography & Security** episode, with **Computer Networks** alongside. Public-key crypto, hashing, replay defence, and hardware key storage are high-value interview topics — and rarely explained this concretely.*
+
+### Cryptography & Security
+
+- **Symmetric vs asymmetric crypto.** *Symmetric* (AES, HMAC): both sides share one secret key — fast, but you must distribute the secret. *Asymmetric* (RSA, ECDSA, Ed25519): a keypair; the **private** key signs, the **public** key verifies, and the private key never leaves its owner. SAGE— sorry, VIGIA — uses asymmetric so the cloud can verify a device without ever holding its secret.
+- **Digital signatures.** Sign = encrypt a *hash* of the message with the private key; verify = check it with the public key. This proves **authenticity** (who sent it) and **integrity** (it wasn't altered). Two curves here: **ECDSA over P-256** (from the Pi's ATECC608A hardware chip) and **Ed25519** (from the phone). Both are elliptic-curve schemes; Ed25519 is faster and has fewer footguns, ECDSA is what the hardware secure element supports.
+- **Cryptographic hashing (SHA-256).** A one-way function mapping any input to a fixed 256-bit digest: deterministic, collision-resistant, avalanche effect. The cloud **reconstructs the exact 96-byte struct and re-hashes it**, then checks the signature against that hash — so a single flipped bit changes the hash and fails verification. *You must sign/verify over the exact same bytes.*
+- **Hardware security module / secure element.** The ATECC608A is a **tamper-resistant chip** whose private key is generated inside and never extractable. This is why the Pi path is the "strong" one — the key can't be stolen even from a compromised host. (The phone's key is software-wrapped — softer, hence the extra device-registry check.)
+- **Replay attacks & their defences.** A valid signature doesn't stop an attacker *resending* a captured-but-genuine message. Two classic defences, both used here: a **monotonic sequence number** (nonce) enforced by a conditional DB write — an old sequence is rejected; and a **timestamp freshness window** (±10 min) — a stale message is refused. Nonce = "number used once."
+- **Binding evidence into the signature.** Folding the frame's SHA-256 into the signed message means you can't keep a valid signature and swap the photo — the signature covers the *specific* image. This is how you prevent content substitution.
+
+**Interview Q&A.**
+1. *Symmetric vs asymmetric encryption — when each?* → Symmetric for bulk speed with a shared secret (TLS session); asymmetric for identity/signatures/key-exchange without sharing a secret.
+2. *How does a digital signature work?* → Sign a hash with the private key; verify with the public key; gives authenticity + integrity (+ non-repudiation).
+3. *What properties does a cryptographic hash need?* → One-way (preimage resistance), collision resistance, deterministic, avalanche.
+4. *What is a replay attack and how do you prevent it?* → Resending a valid captured message; prevent with nonces/sequence numbers or timestamp windows (or both).
+5. *Why store keys in a secure element vs software?* → Non-extractable, tamper-resistant; survives a compromised host — the strongest identity guarantee available on a device.
+6. *How would you stop someone swapping the image behind a signed claim?* → Include the image's hash in the signed payload.
+
+### Computer Networks
+
+- **MQTT vs HTTPS.** The Pi publishes over **MQTT** — a lightweight **pub/sub** protocol for constrained/IoT devices: a client publishes to a *topic*, brokers fan out to subscribers, low overhead, works on flaky links, supports QoS levels. The phone uses **HTTPS** — request/response over TLS. Choosing per device: MQTT for always-on telemetry from tiny devices, HTTPS for app-initiated requests.
+- **TLS.** Both channels run over **TLS**: asymmetric handshake to agree a symmetric session key, then symmetric encryption for speed — plus server (and here, device) authentication. This is the canonical "asymmetric to bootstrap, symmetric to run" pattern.
+- **Topic-scoped authorization.** Each Pi's IoT policy restricts it to its own `${clientId}` topic — a device can publish only as itself. Network-layer least privilege.
+
+**Interview Q&A.**
+1. *MQTT vs HTTP — when do you pick MQTT?* → Pub/sub telemetry from many constrained devices, unreliable networks, low overhead, server-push; HTTP for request/response app traffic.
+2. *How does TLS combine symmetric and asymmetric crypto?* → Asymmetric handshake authenticates + exchanges a key; symmetric encrypts the bulk session (performance).
+
+### ⚖️ This vs That — the architecture decisions, and the roads not taken
+
+| Decision | Alternatives | Why this choice |
+|---|---|---|
+| **Asymmetric verification (ECDSA / Ed25519)** | Symmetric HMAC with a shared key | A shared secret must be distributed and stored on every device — a huge attack surface, and impossible with a non-extractable hardware key. Asymmetric lets the cloud verify without holding any secret. |
+| **Reconstruct-and-rehash the struct** | Trust the decoded payload's fields | A signature only means something over exact bytes; verifying the decoded form lets a tampered field slip through. Rebuild the signed bytes and check the hash first. |
+| **Per-source scheme (hardware ECDSA vs software Ed25519 + registry)** | One scheme for both | A hardware chip and a general-purpose phone offer different guarantees; matching the scheme (and adding a registry for the softer path) makes each as strong as its hardware allows. |
+| **Sequence watermark (Pi) + timestamp window (phone)** | No replay defence; or one mechanism for both | Replay is a separate attack from forgery; the Pi's monotonic counter and the phone's freshness window each suit their source. |
+
+**The one to defend:** *asymmetric vs symmetric, driven by key storage.* The clean answer connects crypto to hardware: **you can't do symmetric HMAC with a key that hardware refuses to export, so non-extractable secure-element keys force an asymmetric design — which is also strictly safer (no shared secret to leak).** The platform constraint points at the correct cryptography.

@@ -39,3 +39,43 @@ When the output is money, "we check for duplicates" is not good enough, because 
 The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/VigiaLabs/vigia-amazon).
 
 *Engineering RoadIntelligence IDE · Episode 3 of 5 — Previous: Episode 2. Next: Episode 4, Verification is decoupled from ingestion by a stream.*
+
+---
+
+## 🎓 CS Fundamentals — study companion
+
+*This is **the DBMS episode** — ACID, transactions, isolation, concurrency control, idempotency, and hash chains. Transactions and race conditions are among the most-asked backend interview topics; this post is a perfect worked example.*
+
+### DBMS — transactions & concurrency
+
+- **ACID.** **A**tomicity (all-or-nothing), **C**onsistency (invariants hold), **I**solation (concurrent txns don't interfere), **D**urability (committed = survives crash). The reward credit is one **atomic** 3-item transaction: the cooldown lock, the balance increment, and the ledger entry all commit together or none do — you can never have a balance move without a ledger record.
+- **The race condition (why a transaction, not a check).** *Check-then-act* — "is this wallet already rewarded? no → add balance" — has a **time-of-check-to-time-of-use (TOCTOU)** gap. Two concurrent workers both read "not rewarded," both credit → double-pay. Streams retry and can deliver duplicates, so this *will* happen. The fix is to remove the gap by making it one atomic conditional transaction.
+- **Optimistic concurrency control & conditional writes.** The cooldown `PUT` has a condition `attribute_not_exists(key)`. Exactly one concurrent writer wins; the other's whole transaction is cancelled (caught and skipped). This is **optimistic concurrency** — don't lock upfront, just fail the commit if someone beat you — and it's how you get correctness without a global lock. (Contrast: *pessimistic* locking.)
+- **Idempotency.** Because retries are expected (at-least-once delivery), the operation must be **idempotent** — applying it twice = applying it once. The cooldown key is the **idempotency key**: the second attempt is a no-op. Every payment/webhook system needs this.
+- **Isolation levels (context).** Interviewers love these: *read uncommitted → read committed → repeatable read → serializable*, trading concurrency for anomaly-freedom (dirty reads, non-repeatable reads, phantoms). A single atomic transaction with a uniqueness condition gives serializable-like safety for this operation.
+- **TTL / soft state.** The cooldown key has a 30-day time-to-live — the DB auto-expires it. TTL is a clean way to bound the size of "recently done" state.
+
+### DBMS — integrity & auditing
+
+- **Hash-chained ledger (tamper-evidence).** Each ledger entry stores `SHA-256(entry ‖ previous_hash)` — a **hash chain** (the core of a blockchain / a Merkle-log). You can't alter a past entry without recomputing every hash after it, so tampering is detectable. It cryptographically binds the *history* to the running *balance*.
+- **Off-chain vs on-chain (write-back caching analogy).** Credits land off-chain (DynamoDB) instantly for UX and cost, then settle on-chain (Solana). This is a **write-behind / two-tier** pattern: fast authoritative-enough store in front, durable/immutable store behind.
+
+**Interview Q&A.**
+1. *What does ACID stand for and why does each letter matter?* → (as above); tie atomicity to "balance move + ledger entry can't half-happen."
+2. *You have a check-then-act race crediting a wallet twice. Fix it.* → Make it one atomic transaction with a uniqueness condition (conditional write); catch the cancellation. Discuss TOCTOU.
+3. *Optimistic vs pessimistic concurrency control?* → Fail-on-conflict at commit (version/condition) vs lock-upfront; optimistic wins under low contention and avoids deadlocks.
+4. *What is idempotency and how do you implement it?* → Same effect on repeat; use an idempotency key stored uniquely so retries no-op — essential with at-least-once delivery.
+5. *Name the SQL isolation levels and an anomaly each prevents.* → RU/RC/RR/Serializable vs dirty/non-repeatable/phantom reads.
+6. *How do you make an audit log tamper-evident?* → Hash-chain entries (each includes the prior hash) / Merkle tree; any edit breaks the chain.
+
+### ⚖️ This vs That — the architecture decisions, and the roads not taken
+
+| Decision | Alternatives | Why this choice |
+|---|---|---|
+| **One atomic 3-item transaction** | Check-then-act (read, then write balance + ledger) | Check-then-act has a TOCTOU gap that concurrent/duplicate events exploit → double-pay. A single conditional transaction makes the second write *unreachable*. |
+| **Conditional write (optimistic)** | A distributed lock around the credit | A lock adds latency, a coordination service, and deadlock/expiry risk. A conditional write gives the same safety with none of that, under this low-contention pattern. |
+| **Cooldown key as idempotency key + TTL** | Dedup by scanning recent ledger entries | Scanning is slow and racy; a unique key with TTL is O(1), self-expiring, and atomic within the transaction. |
+| **Hash-chained ledger** | Plain append-only table | A plain table can be edited silently; hash-chaining makes any tampering detectable and binds history to balance. |
+| **Off-chain credit, on-chain settle** | Pay a chain fee on every reward | Per-event on-chain writes are slow and costly; off-chain-first keeps the hot path fast, on-chain anchors the record. |
+
+**The one to defend:** *atomic transaction vs "we check for duplicates."* The junior answer adds a check; the senior answer names **TOCTOU** and makes double-payment an **unreachable state** via one atomic conditional write with an idempotency key — correctness guaranteed by the database, not by hoping the check always runs first.

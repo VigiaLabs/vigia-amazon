@@ -33,3 +33,30 @@ Looking back, the same instinct shows up in every one of these decisions. In a s
 None of these are exotic on their own. The interesting part was deciding, for a cloud whose whole job is to separate real road hazards from profitable lies, where to place a cryptographic check, where to spend a model call, and where to let a database transaction do the work that a race condition would otherwise undo.
 
 The full system is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/VigiaLabs/vigia-amazon). This is part of an ongoing build series.
+
+---
+
+## 🎓 CS Fundamentals — study companion
+
+*This backend is a distributed-systems syllabus: **System Design**, **DBMS**, **Computer Networks**, and **Security/Cryptography**. This overview frames them; the episodes go deep. Read before any systems-design or backend interview.*
+
+### System Design
+
+- **Serverless architecture.** All compute is Lambda (functions) behind API Gateway / IoT Core — no always-on servers, pay-per-invocation, auto-scaling, zero idle cost. The tradeoff: cold starts, statelessness, and vendor coupling. Serverless suits **spiky, event-driven** workloads (exactly this).
+- **Event-driven / pipeline architecture.** The system is a chain: **ingest → verify → reward → analyse → surface**, where each stage is triggered by an event (an MQTT message, a stream record) rather than a direct call. Loose coupling = independent scaling and failure isolation.
+- **The core thesis: adversarial input, financial output.** When users can lie and the output is money, **correctness must be structural** (cryptography, transactions, filters), not aspirational (checks, hope). Every episode is one instance of that.
+
+### DBMS / Networks / Security (preview)
+- **DBMS:** an atomic 3-item transaction makes double-payment impossible (Ep 3); DynamoDB streams (CDC) decouple stages (Ep 4).
+- **CN:** two ingestion channels — MQTT over TLS from the Pi, HTTPS from the phone (Ep 1).
+- **Security:** hardware ECDSA + software Ed25519 verification, replay defence, least-privilege IAM (Ep 1, 4).
+
+### ⚖️ This vs That — the architecture decisions, and the roads not taken
+
+| Decision | Alternatives | Why this choice |
+|---|---|---|
+| **Serverless (Lambda + managed services)** | A container/VM fleet (ECS/EC2) | A crowdsourced feed is spiky and unpredictable; paying for always-on servers wastes money at idle and caps you at peak. Serverless scales to zero and to spikes automatically — ideal for event-driven ingestion. |
+| **Verify-then-trust** | Trust the client, validate loosely | The input is adversarial and the output is money; a loosely-validated submission is a paid exploit. Cryptographic verification is the only safe default. |
+| **Event-driven pipeline** | One synchronous request handler doing everything | A monolithic handler couples slow verification to fast ingestion and can't scale stages independently. Events + streams decouple them. |
+
+**The one to defend:** *structural correctness vs defensive checks.* The senior instinct in an adversarial, money-handling system is to make bad outcomes **unreachable states** — a signature that must verify, a transaction that can't double-commit, a filter that can't loop — rather than a pile of `if` checks you hope cover every case.
