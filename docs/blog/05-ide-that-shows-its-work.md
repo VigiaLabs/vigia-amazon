@@ -36,6 +36,19 @@ The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/Vigia
 
 ---
 
+## 🧰 The transparency stack, from zero — and what we chose it over
+
+- **An "IDE" that shows its work over a black-box dashboard.** The frontend surfaces the full provenance chain of every hazard: which device attested it, how it was verified (ONNX fast path vs the 2% VLM), why a reward was credited, and where it sits in the maintenance queue. Transparency is treated as a product feature — the same instinct as VIGIASearch's cited answers — because a decision-support tool that can't show its evidence can't be trusted.
+- It reads the **verified hazard map, the rewards ledger, and the maintenance queue** the backend exposes, and drives **Stripe** fiat-payout flows for redemption.
+
+## 🚢 From demo to production
+
+- Real **observability** behind the UI — **X-Ray** traces, CloudWatch dashboards, structured logs — so "show its work" is backed by real telemetry, not a mock.
+- **Role-based access** and **audit logs** for the operators who act on recommendations.
+- **Reconciliation views** that make the off-chain/on-chain/Stripe money trail legible end to end.
+
+---
+
 ## 🎓 CS Fundamentals — study companion
 
 *This finale is **System Design** (agent orchestration, workflow state machines, streaming) plus **Product/HCI design** (transparency & explainability) and an **observability** callback. "Design an agentic / explainable AI system" is an increasingly common interview prompt.*

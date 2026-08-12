@@ -40,6 +40,21 @@ The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/Vigia
 
 ---
 
+## 🧰 The event-driven stack, from zero — and what we chose it over
+
+- **Event-driven via DynamoDB Streams + EventBridge Pipes over synchronous coupling.** Ingestion writes a hazard and returns fast; the table's **stream** emits the change; the orchestrator reacts *asynchronously*. This is **change data capture (CDC)** — the database's own change log is the event source, so verification never slows the write path.
+- **EventBridge Pipes with an `INSERT`-only filter over checking `eventName` inside Lambda.** Pre-Lambda filtering means MODIFY/REMOVE events never invoke the orchestrator (~60% fewer invocations) and there's no filter-vs-Lambda race. Pipes bring **managed retry + an SQS dead-letter queue** — no hand-rolled retry logic.
+- **Fan-out with a second pipe** (VERIFIED hazards → an SQS maintenance queue for repair dispatch), with batch size tuned per consumer (10 for fire-and-forget throughput, 1 where ordering matters).
+- **At-least-once delivery + idempotent consumers = effectively-once** — the same discipline as the ledger.
+
+## 🚢 From demo to production
+
+- **DLQ alarms + redrive** and poison-message handling.
+- **Ordering guarantees** where the domain needs them; **backpressure** under load.
+- **Replay from the stream** as a recovery mechanism after an incident.
+
+---
+
 ## 🎓 CS Fundamentals — study companion
 
 *This is the **distributed-systems / System Design** episode — event-driven architecture, change-data-capture, message queues, dead-letter queues, and least-privilege security. These are the backbone of modern backend interviews.*

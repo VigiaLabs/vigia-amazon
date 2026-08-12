@@ -44,6 +44,22 @@ The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/Vigia
 
 ---
 
+## 🧰 The attestation stack, from zero — and what we chose it over
+
+"Trust nothing you didn't verify" is two independent layers, from zero:
+
+- **Payload signatures over trust-the-sender.** Every event is signed by the device/wallet key (see the Mobile series' key hierarchies). The backend verifies the signature before writing anything — possession of the private key *is* the credential, so there's no shared secret to steal.
+- **AWS IoT Core X.509 mutual TLS over app-layer auth alone.** The device authenticates with a *certificate* before its payload ever reaches Lambda, and a scoped IoT policy limits each device to its own publish topics. That's **defense in depth**: transport-layer mutual TLS *and* an application-layer signature — a rogue device fails at the door, and a replayed-but-unsigned payload fails at the function.
+- **A Topic Rule SQL filter** routes only the intended topics onward (cost and blast-radius control), and payloads travel as compact **MsgPack** (base64 through the rule) rather than verbose JSON.
+
+## 🚢 From demo to production
+
+- **Certificate lifecycle** — provisioning, rotation, and revocation for fleets of devices.
+- **Replay protection** — nonces/timestamps so a captured-but-valid signed event can't be re-submitted.
+- **Fail-closed** on any signature/verification error, plus per-device rate limits.
+
+---
+
 ## 🎓 CS Fundamentals — study companion
 
 *This is the **Cryptography & Security** episode, with **Computer Networks** alongside. Public-key crypto, hashing, replay defence, and hardware key storage are high-value interview topics — and rarely explained this concretely.*

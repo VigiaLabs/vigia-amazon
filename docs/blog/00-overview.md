@@ -36,6 +36,27 @@ The full system is open at [github.com/VigiaLabs/vigia-amazon](https://github.co
 
 ---
 
+## 🧰 The stack, from zero — and what we chose it over
+
+The backend is TypeScript on serverless AWS, defined as infrastructure-as-code with the **AWS CDK**. The whole toolbox, and the road not taken:
+
+- **Serverless (Lambda + managed services) over a self-hosted server.** No EC2 to babysit; it scales to zero and to spikes. CDK means the infra is versioned code, not clicks in a console.
+- **Ingestion — AWS IoT Core (managed MQTT) over self-hosted Mosquitto + FastAPI on EC2.** IoT Core handles MQTT scaling, TLS termination, and **X.509 mutual-TLS device authentication** before a payload reaches Lambda; a Topic Rule pre-filters with SQL so only the right topics invoke a function. The mobile path comes over HTTPS.
+- **Verification — Amazon Bedrock (Nova Lite VLM + a ReAct agent) with a cheap ONNX fast path.** 98% of events clear a calibrated ONNX threshold; a random 2% get the expensive VLM (Episode 2).
+- **State — DynamoDB** for the hazard table and rewards ledger, with **Streams** + **GSIs**, and **TransactWrite** for atomic credits (Episode 3).
+- **Orchestration glue — EventBridge Pipes** (pre-Lambda filtering, managed retry + SQS DLQ) decoupling ingestion from verification (Episode 4).
+- **Rewards — an off-chain `pending_balance` in DynamoDB (authoritative) + a Solana Anchor program (records events, fire-and-forget) + Stripe Connect (fiat payout).**
+- **Dedup — the H3 hexagonal grid over geohash** (uniform cells, a clean resolution hierarchy, and O(1) GSI lookups).
+
+## 🚢 From demo to production
+
+This backend is already *serverless-production-shaped* — managed services, IaC, dead-letter queues. Naming the hardening that remains, from zero:
+- **Least-privilege IAM per Lambda**, so a compromised function has a small blast radius.
+- **Idempotency everywhere** (at-least-once delivery is the default), **DLQ alarms + redrive**, and **cost SLOs** on Bedrock spend.
+- **Reconciliation** across the off-chain balance, on-chain events, and Stripe payouts; on-chain settlement is deliberately deferred to a future batch — the off-chain ledger is authoritative today, and we say so.
+
+---
+
 ## 🎓 CS Fundamentals — study companion
 
 *This backend is a distributed-systems syllabus: **System Design**, **DBMS**, **Computer Networks**, and **Security/Cryptography**. This overview frames them; the episodes go deep. Read before any systems-design or backend interview.*

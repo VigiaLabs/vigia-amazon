@@ -42,6 +42,23 @@ The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/Vigia
 
 ---
 
+## 🧰 The ledger stack, from zero — and what we chose it over
+
+Paying a reward *is* a database transaction. From zero, the guarantees that make it safe:
+
+- **DynamoDB TransactWrite (atomic) over a naive read-modify-write.** Crediting a reward touches the ledger entry and the running balance together; a transaction makes it **all-or-nothing**, so a crash mid-credit can't leave a half-paid state. That's the **A** (atomicity) and **D** (durability) of ACID at the item level.
+- **Idempotency keys over at-least-once double-credit.** The stream can deliver the same verification twice; a conditional write keyed on the event id credits it exactly once — **at-least-once delivery + idempotent write = effectively-once**.
+- **Optimistic concurrency (conditional writes) over locks.** "Credit only if the version is unchanged" prevents the double-spend **TOCTOU** race without ever holding a lock — higher throughput, no deadlocks.
+- **An off-chain `pending_balance` (authoritative) over per-verification on-chain mint.** A Solana mint per event adds 0.5–2s latency and cumulative gas at scale; DynamoDB TransactWrite is low-latency and predictable. Solana records the *event* fire-and-forget; **Stripe Connect** is the fiat exit ramp.
+
+## 🚢 From demo to production
+
+- **Append-only, hash-chained ledger** for tamper-evidence and audit.
+- **Reconciliation** across off-chain balance, on-chain events, and Stripe payouts; **exactly-once payout** guarantees.
+- The **batch on-chain settlement** that periodically mints against accumulated balances.
+
+---
+
 ## 🎓 CS Fundamentals — study companion
 
 *This is **the DBMS episode** — ACID, transactions, isolation, concurrency control, idempotency, and hash chains. Transactions and race conditions are among the most-asked backend interview topics; this post is a perfect worked example.*

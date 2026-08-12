@@ -38,6 +38,20 @@ The code is open at [github.com/VigiaLabs/vigia-amazon](https://github.com/Vigia
 
 ---
 
+## 🧰 The verification stack, from zero — and what we chose it over
+
+- **Probabilistic (sampled) verification over verify-everything-with-the-expensive-model.** A cheap ONNX confidence threshold (≥0.65) verifies 98% of submissions; the expensive **Bedrock Nova Lite VLM** checks a *random 2%*. That's the "why the expensive AI only sees 2%" thesis.
+- **Why sampling is still secure, from zero.** An attacker can't predict which 2% gets the VLM, so faking confidence on the fast path still risks being caught — it's **expected-value deterrence**. Paired with **Sybil slashing**, a spoofer who generates ≥50 fakes statistically expects ≥1 VLM catch and an on-chain penalty, making sustained fraud economically irrational. You don't need 100% coverage to make cheating a losing bet.
+- **A Bedrock ReAct agent** does the multi-step reasoning on flagged events; the VLM path is **fail-closed** — on error it denies, never rubber-stamps.
+
+## 🚢 From demo to production
+
+- **Tune the sample rate to the fraud/cost curve**, and monitor the realised catch rate.
+- **Adaptive sampling** — raise the rate for nodes with a suspicious history.
+- A **cost SLO** on Bedrock so verification spend stays bounded at DePIN scale.
+
+---
+
 ## 🎓 CS Fundamentals — study companion
 
 *This episode blends **System Design** (cost under adversarial load), **Security** (economic security — staking/slashing, denial-of-wallet), **Statistics** (sampling/probabilistic auditing), and **ML systems** (VLMs, ReAct agents).*
